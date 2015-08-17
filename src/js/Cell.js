@@ -54,8 +54,10 @@ const style = {
     paddingRight: '2px',
     paddingTop: '2px',
     paddingBottom: '2px',
-    borderColor: 'rgb(59, 108, 227)',
-    borderWidth: '3px'
+    borderLeft: '3px solid rgb(59, 108, 227)',
+    borderRight: '3px solid rgb(59, 108, 227)',
+    borderTop: '3px solid rgb(59, 108, 227)',
+    borderBottom: '3px solid rgb(59, 108, 227)'
   },
   invalid: {
     background: '#FFCCCC'
