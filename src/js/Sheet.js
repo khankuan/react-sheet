@@ -50,6 +50,9 @@ class Sheet extends React.Component {
       columnReverseIndex: this._getColumnReverseIndex(props.columns)
     };
 
+    this.__history = [this.state.data];
+    this.__historyIndex = 0;
+
     if (props.window){
       window[props.window] = this;
     }
@@ -74,6 +77,13 @@ class Sheet extends React.Component {
     window.removeEventListener('paste', this._handlePaste);
     window.removeEventListener('copy', this._handleCopy);
     window.removeEventListener('cut', this._handleCut);
+  }
+
+  componentDidUpdate (prevProps, prevState) {
+    if (prevState.data !== this.state.data && this.__history[this.__historyIndex - 1] !== this.state.data){
+      this.__history.push(this.state.data);
+      this.__historyIndex = this.__history.length;
+    }
   }
 
   getValidatedData (cb) {
@@ -263,7 +273,7 @@ class Sheet extends React.Component {
         selected={selected}
         label={(rowIndex + 1) + ''}
         onMouseDown={this._handleIndexMouseDown.bind(this, rowIndex, 0, rowIndex, this.props.columns.length)}
-        onMouseOver={this._handleIndexMouseOver.bind(this, rowIndex)} />
+        onMouseEnter={this._handleIndexMouseOver.bind(this, rowIndex)} />
     );
   }
 
@@ -304,7 +314,7 @@ class Sheet extends React.Component {
           selected={selected}
           highlighted={columnData.required}
           onMouseDown={this._handleColumnMouseDown.bind(this, 0, colIndex, this.props.rowCount, colIndex)}
-          onMouseOver={this._handleColumnMouseOver.bind(this, colIndex)} />
+          onMouseEnter={this._handleColumnMouseOver.bind(this, colIndex)} />
       );
     }
   }
@@ -347,7 +357,7 @@ class Sheet extends React.Component {
     return (
       <CellWrapper
         onMouseDown={this._handleCellClick.bind(this, rowIndex, colIndex)}
-        onMouseEnter={this._handleCellDragOver.bind(this, rowIndex, colIndex)}>
+        onMouseMove={this._handleCellDragOver.bind(this, rowIndex, colIndex)}>
         <Cell
           {...columnData}
           focused={focused}
@@ -421,7 +431,18 @@ class Sheet extends React.Component {
       }
     } else if (e.keyCode === 8 || e.keyCode === 46){
       this._handleDelete(e);
+    } else if (e.keyCode === 90 && ctrl){
+      if (e.shiftKey && this.__historyIndex < this.__history.length){
+        this.__historyIndex++;
+        const data = this.__history[this.__historyIndex - 1];
+        this.setState({data});
+      } else if (!e.shiftKey && this.__historyIndex > 0){
+        this.__historyIndex--;
+        const data = this.__history[this.__historyIndex - 1];
+        this.setState({data});
+      }
     }
+    window.x = this;
 
     if (!ignoreKeyCodes[e.keyCode] && !this.state.editing && !this._isCommand(e)){
       this.setState({editing: true});
@@ -467,8 +488,9 @@ class Sheet extends React.Component {
 
 
   _handleCellDragOver (endRow, endCol) {
-    if (this.__dragging){
-      const sel = this.state.selection;
+    const sel = this.state.selection;
+    if (this.__dragging &&
+      (endRow !== sel.endRow || endCol !== sel.endCol)){
       this._setSelectionPoint(sel.startRow, sel.startCol, endRow, endCol);
     }
   }
@@ -493,7 +515,7 @@ class Sheet extends React.Component {
       column.cellRenderer = this._cellRenderer.bind(this);
       column.headerRenderer = this._headerRenderer.bind(this);
       column.width = this.state.columnWidthOverrides[column.dataKey] || column.width || 150;
-      column.allowCellsRecycling = true;
+      column.allowCellsRecycling = false;
       column.isResizable = true;
 
       if (i === this.props.columns.length - 1){

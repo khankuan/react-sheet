@@ -61,6 +61,7 @@ function submit () {
 ## TODO
 - Right click menu (copy, paste, cut)
 - Cut to perserve data before paste
+- Fix safari drag causing i-beam cursor
 
 
 ## Dev Instructions

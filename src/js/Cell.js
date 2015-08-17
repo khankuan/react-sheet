@@ -97,6 +97,8 @@ class Cell extends React.Component {
     this.state = {
       data: props.data
     };
+
+    this._handleChange = this._handleChange.bind(this);
   }
 
   componentWillReceiveProps (nextProps) {
@@ -185,7 +187,7 @@ class Cell extends React.Component {
   }
 
   render () {
-    const styles = [style.base, Styles.Unselectable];
+    const styles = [style.base];
 
     if (this.props.edgeLeft){ styles.push(style.edgeLeft); }
     if (this.props.edgeRight){ styles.push(style.edgeRight); }
@@ -220,7 +222,7 @@ class Cell extends React.Component {
           style={styles}
           value={this.props.editing ? this.state.data : this.props.data}
           onKeyUp={this._handleKeyUp.bind(this)}
-          onChange={this._handleChange.bind(this)}
+          onChange={this._handleChange}
           onBlur={this._commitEdit.bind(this, false)}
           onDoubleClick={this.props.onEdit}
           disabled={!this.props.editing} />
