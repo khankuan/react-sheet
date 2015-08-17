@@ -442,7 +442,6 @@ class Sheet extends React.Component {
         this.setState({data});
       }
     }
-    window.x = this;
 
     if (!ignoreKeyCodes[e.keyCode] && !this.state.editing && !this._isCommand(e)){
       this.setState({editing: true});
