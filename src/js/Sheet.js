@@ -16,7 +16,7 @@ import ColumnHeader from './ColumnHeader';
 import Cell from './Cell';
 import validator from './Validator';
 
-import { inBetween, inBetweenArea } from './helper';
+import { inBetween, inBetweenArea, isInParent, ignoreKeyCodes, isCommand } from './helper';
 
 @Radium
 class Sheet extends React.Component {
@@ -30,7 +30,7 @@ class Sheet extends React.Component {
     const columns = this._getInitialColumns(props);
     this.state = {
       columnWidthOverrides: {},
-      columns: columns,
+      columns,
       data: this._getInitialData(props, columns),
       selection: {}
     };
@@ -61,10 +61,12 @@ class Sheet extends React.Component {
 
   componentWillMount () {
     window.addEventListener('mouseup', this._handleGlobalMouseUp);
+    window.addEventListener('keydown', this._handleKeyDown);
   }
 
   componentWillUnmount () {
     window.removeEventListener('mouseup', this._handleGlobalMouseUp);
+    window.removeEventListener('keydown', this._handleKeyDown);
   }
 
   /**
@@ -197,9 +199,6 @@ class Sheet extends React.Component {
   }
 
   _handleGlobalMouseDown = (type, selection, e) => {
-    if (e.target.tagName !== 'SELECT'){  //  disable i-beam cursor when dragging
-      e.preventDefault();
-    }
     this.__dragging[type] = true;
     this._setSelectionObject(selection);
   }
@@ -235,6 +234,67 @@ class Sheet extends React.Component {
     data = data.set(rowIndex, row);
     this.setState({data, editing: false});
   }
+
+  _handleKeyDown = (e) => {
+    if (!isInParent(e.target, React.findDOMNode(this.refs.base))){
+      return;
+    }
+
+    //  Arrow events
+    const sel = this.state.selection;
+    const ctrl = (e.ctrlKey || e.metaKey);
+
+    if (e.keyCode === 38){
+      e.preventDefault();
+      if (e.shiftKey){
+        this._setSelectionObject({ endRow: ctrl ? 0 : sel.endRow - 1 });
+      } else {
+        this._setSelectionPoint(sel.startRow - 1, sel.startCol, sel.startRow - 1, sel.startCol);
+      }
+    }
+    else if (e.keyCode === 40){
+      e.preventDefault();
+      if (e.shiftKey){
+        this._setSelectionObject({ endRow: ctrl ? this.props.rowCount : sel.endRow + 1 });
+      } else {
+        this._setSelectionPoint(sel.startRow + 1, sel.startCol, sel.startRow + 1, sel.startCol);
+      }
+    }
+    else if (e.keyCode === 37){
+      e.preventDefault();
+      if (e.shiftKey){
+        this._setSelectionObject({ endCol: ctrl ? 0 : sel.endCol - 1 });
+      } else {
+        this._setSelectionPoint(sel.startRow, sel.startCol - 1, sel.startRow, sel.startCol - 1);
+      }
+    }
+    else if (e.keyCode === 39){
+      e.preventDefault();
+      if (e.shiftKey){
+        this._setSelectionObject({ endCol: ctrl ? this.props.columns.length : sel.endCol + 1 });
+      } else {
+        this._setSelectionPoint(sel.startRow, sel.startCol + 1, sel.startRow, sel.startCol + 1);
+      }
+    }
+    else if (e.keyCode === 13){
+      e.preventDefault();
+      this._setSelectionPoint(sel.startRow + 1, sel.startCol, sel.startRow + 1, sel.startCol);
+    }
+    else if (e.keyCode === 9){
+      e.preventDefault();
+      if (e.shiftKey){
+        this._setSelectionPoint(sel.startRow, sel.startCol - 1, sel.startRow, sel.startCol - 1);
+      } else {
+        this._setSelectionPoint(sel.startRow, sel.startCol + 1, sel.startRow, sel.startCol + 1);
+      }
+    }
+    else if (!ignoreKeyCodes[e.keyCode] && !this.state.editing && !isCommand(e)){
+      this.setState({editing: true});
+    }
+    console.log(e.key, e.keyCode, e);
+  }
+
+
 
 
   /**
@@ -392,11 +452,14 @@ class Sheet extends React.Component {
 
   render () {
     return (
-      <div style={ [
-          Styles.Unselectable,
+      <div
+        ref='base'
+        style={ [
+          //Styles.Unselectable,
           Styles.FullSize,
           Styles.Sheet.base
-        ] }>
+        ] }
+        tabIndex='0' >
         <Autosize>
           <Table
             rowsCount={ this.state.data.size }

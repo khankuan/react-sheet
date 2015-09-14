@@ -3,7 +3,7 @@ import Radium from 'radium';
 import tinycolor from 'tinycolor2';
 import Styles from '../styles';
 
-import { inBetween, inBetweenArea, isEqualObject } from './helper';
+import { isEqualObject } from './helper';
 
 @Radium
 class Cell extends React.Component {
@@ -86,6 +86,12 @@ class Cell extends React.Component {
   _handleSelect = (hover) => {
     this.setState({ hoverOptions: hover });
   }
+
+  _preventDefault = (e) => {
+    e.preventDefault();
+  }
+
+
 
 
   /*
@@ -205,24 +211,18 @@ class Cell extends React.Component {
     return false;
   }
 
-  componentDidUpdate () {
-    const input = React.findDOMNode(this.refs.input);
-    if (!this.props.editing && input === document.activeElement){
-      input.blur();
-    }
-  }
-
   render () {
     return (
       <div
         style={ [Styles.Stretch, Styles.Unselectable] }
+        onDrag={ this._preventDefault }
         onMouseDown={ this.props.onMouseDown }
         onMouseOver={ this.props.onMouseOver } >
         <input
           ref='input'
           type='text'
           style={ this.getStyle() }
-          value={ this.props.editing ? this.state.data : this.props.data}
+          value={ this.props.editing ? this.state.data : this.props.data }
           onKeyUp={ this._handleKeyUp }
           onChange={ this._handleChange}
           onBlur={ this._commitEdit } />

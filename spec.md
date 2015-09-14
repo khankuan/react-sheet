@@ -52,6 +52,8 @@
     - If Esc, clear cut area.
     - If Delete/backspace, clear data in selection
   - Double Click: Sets cell to editing mode, set selection to cell
+  - Tab: Set selection to first cell on right, from the top
+  - Enter: Set selection to first cell below, to the left
 - `Header`
   - MouseDown: Set selection to row/column
   - ContextMenu: Shows menu
@@ -66,8 +68,6 @@
   - Mousedown: Set selection to cell, set selecting true
   - Mouseover: Expand selection if selecting
   - Mouseup: Set selecting to false
-  - Tab: Set selection to first cell on right, from the top
-  - Enter: Set selection to first cell below, to the left
   - Esc: Set editing to false
 - `Selection`
   - ContextMenu

@@ -41,7 +41,7 @@ class RowIndex extends React.Component {
 RowIndex.propTypes = {
   index: React.PropTypes.number,
   selected: React.PropTypes.bool,
-  errors: React.PropTypes.array,
+  errors: React.PropTypes.object,
   getStyle: React.PropTypes.func,
 
   selectedFactor: React.PropTypes.number

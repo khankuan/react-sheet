@@ -17,3 +17,34 @@ export function isEqualObject (a, b, ignoreKeys = {}) {
 
   return true;
 }
+
+export function isInParent (child, parent) {
+  while (child) {
+    if (child === parent){
+      return true;
+    } else {
+      child = child.parentNode;
+    }
+  }
+
+  return false;
+}
+
+export const ignoreKeyCodes = {
+  37: true,
+  38: true,
+  39: true,
+  40: true,
+  16: true,
+  17: true,
+  18: true,
+  27: true,
+  91: true,
+  93: true
+};
+
+
+export function isCommand (e) {
+  return (e.metaKey || e.ctrlKey) && (e.keyCode === 67 || e.keyCode === 86 || e.keyCode === 88) ||
+          (e.keyCode === 8 || e.keyCode === 46);
+}
