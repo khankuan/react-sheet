@@ -1,106 +1,22 @@
 import React from 'react';
 import Radium from 'radium';
+import tinycolor from 'tinycolor2';
 import Styles from '../styles';
 
-const style = {
-  base: {
-    paddingLeft: '4px',
-    paddingRight: '4px',
-    paddingTop: '4px',
-    paddingBottom: '4px',
-    borderLeft: '1px dotted rgb(218, 218, 218)',
-    borderRight: '1px dotted rgb(218, 218, 218)',
-    borderTop: '1px dotted rgb(218, 218, 218)',
-    borderBottom: '1px dotted rgb(218, 218, 218)',
-    width: 'calc(100% - 11px)',
-    height: 'calc(100% - 10px)',
-    background: 'none',
-    cursor: 'default',
-    display: 'inline-block'
-  },
-  selected: {
-    background: '#ECF3FF'
-  },
-  focused: {
-    borderLeft: '2px solid rgb(59, 108, 227)',
-    borderRight: '2px solid rgb(59, 108, 227)',
-    borderTop: '2px solid rgb(59, 108, 227)',
-    borderBottom: '2px solid rgb(59, 108, 227)',
-    paddingLeft: '3px',
-    paddingRight: '3px',
-    paddingTop: '3px',
-    paddingBottom: '3px'
-  },
-
-  edgeLeft: {
-    borderLeft: '2px solid rgba(59, 108, 227, 0.3)',
-    paddingLeft: '3px'
-  },
-  edgeRight: {
-    borderRight: '2px solid rgba(59, 108, 227, 0.3)',
-    paddingRight: '3px'
-  },
-  edgeTop: {
-    borderTop: '2px solid rgba(59, 108, 227, 0.5)',
-    paddingTop: '3px'
-  },
-  edgeBottom: {
-    borderBottom: '2px solid rgba(59, 108, 227, 0.5)',
-    paddingBottom: '3px'
-  },
-
-  editing: {
-    paddingLeft: '2px',
-    paddingRight: '2px',
-    paddingTop: '2px',
-    paddingBottom: '2px',
-    borderLeft: '3px solid rgb(59, 108, 227)',
-    borderRight: '3px solid rgb(59, 108, 227)',
-    borderTop: '3px solid rgb(59, 108, 227)',
-    borderBottom: '3px solid rgb(59, 108, 227)'
-  },
-  invalid: {
-    background: '#FFCCCC'
-  },
-  invalidAndSelect: {
-    background: '#F0D6DC'
-  },
-
-  select: {
-    position: 'absolute',
-    right: 0,
-    top: 0,
-    appearance: 'none',
-    WebkitAppearance: 'none',
-    background: 'none',
-    border: 'none',
-    width: '24px',
-    height: '100%',
-    padding: '4px',
-    opacity: 0
-  },
-  arrow: {
-    fontSize: '0.6em',
-    opacity: 0.25,
-    position: 'absolute',
-    right: '6px',
-    top: '50%',
-    transform: 'translateY(-50%)',
-    pointerEvents: 'none'
-  }
-
-};
+import { inBetween } from './helper';
 
 @Radium
 class Cell extends React.Component {
 
+  /*
+    Lifecycle
+   */
   constructor (props) {
-    super();
+    super(props);
     this.state = {
       data: props.data
     };
 
-    this._handleChange = this._handleChange.bind(this);
   }
 
   componentWillReceiveProps (nextProps) {
@@ -114,27 +30,10 @@ class Cell extends React.Component {
     }
   }
 
-  componentWillUnmount () {
-    if (this.__keyDownListener){
-      window.removeEventListener('keydown', this.__keyDownListener, true);
-    }
-  }
-
-  _handleKeyUp (e) {
-    if (e.key === 'Enter') {
-      this._commitEdit(true);
-    } else if (e.key === 'Escape'){
-      this._revert();
-    }
-  }
-
-  _handleChange (e) {
-    this.setState({
-      data: e.target.value
-    });
-  }
-
-  _focusInput (){
+  /**
+   * Internal Methods
+   */
+  _focusInput = () => {
     const node = React.findDOMNode(this.refs.input);
     if (node){
       node.focus();
@@ -142,22 +41,58 @@ class Cell extends React.Component {
     }
   }
 
-  _commitEdit (jumpDown) {
-    this.props.onUpdate(this.state.data, jumpDown);
+  _commitEdit = () => {
+    this.props.onUpdate(this.state.data);
   }
 
-  _revert () {
+  _revert = () => {
     this.setState({data: this.props.data}, () => {
       this.props.onUpdate(this.props.data, false);
     });
   }
 
-  _handleOptions (e) {
+  _getEdges (sel, selected, focused, rowIndex, columnIndex) {
+    return {
+      left: selected && (Math.min(sel.startCol, sel.endCol) === columnIndex) || focused,
+      right: selected && (Math.max(sel.startCol, sel.endCol) === columnIndex) || focused,
+      top: selected && (Math.min(sel.startRow, sel.endRow) === rowIndex) || focused,
+      bottom: selected && (Math.max(sel.startRow, sel.endRow) === rowIndex) || focused
+    };
+  }
+
+  /**
+   * Handlers
+   */
+  _handleKeyUp = (e) => {
+    if (e.key === 'Enter') {
+      this._commitEdit();
+    } else if (e.key === 'Escape'){
+      this._revert();
+    }
+  }
+
+  _handleChange = (e) => {
+    this.setState({ data: e.target.value });
+  }
+
+  _handleOptions = (e) => {
     this.props.onUpdate(e.target.value, false);
   }
 
+  _handleOptionsClick = (e) => {
+    React.findDOMNode(this.refs.select).click();
+  }
+
+  _handleSelect = (hover) => {
+    this.setState({ hoverOptions: hover });
+  }
+
+
+  /*
+    Render
+   */
   _getOptions () {
-    const options = this.props.options.map((option, i) => {
+    const options = this.props.column.options.map((option, i) => {
       return (
         <option
           key={option}
@@ -167,104 +102,154 @@ class Cell extends React.Component {
       );
     });
 
-    options.unshift(<option key=' ' value=' ' disabled>- Choose -</option>);
+    options.unshift(<option key=' ' value=' ' disabled>Choose below</option>);
     return options;
   }
 
   _getSelect () {
-    if (this.props.options){
+    if (this.props.column.options){
       return (
-        <div style={[Styles.Unselectable]}>
+        <div style={ [Styles.Unselectable] }>
+          <div
+            style={ [Styles.Cell.arrow, this.state.hoverOptions ? {opacity: 0.5} : null] }>▼</div>
           <select
             ref='select'
-            style={[style.select, Styles.Unselectable]}
+            style={ [Styles.Cell.select] }
             value={' '}
-            onChange={this._handleOptions.bind(this)} >
+            onChange={ this._handleOptions }
+            onMouseEnter={ this._handleSelect.bind(this, true) }
+            onMouseLeave={ this._handleSelect.bind(this, false) } >
             { this._getOptions() }
           </select>
-          <div style={[Styles.Unselectable, style.arrow]}>▼</div>
         </div>
       );
     }
   }
 
+  getStyle () {
+    const sel = this.props.selection;
+    const editing = this.props.editing;
+    const selected = this.props.selected;
+    const focused = this.props.focused;
+    const error = this.props.error;
+    const rowIndex = this.props.rowIndex;
+    const columnIndex = this.props.columnIndex;
+
+    const styles = [Styles.Cell.input];
+
+    if (!editing) {
+      styles.push(Styles.Unselectable);
+    }
+
+    //  Background color
+    const highlightFactor = Styles.Colors.highlightFactor;
+    if (selected && error) {
+      styles.push({ background: tinycolor
+                                .mix(tinycolor(Styles.Colors.danger), tinycolor(Styles.Colors.primary), 30)
+                                .setAlpha(highlightFactor).toRgbString() });
+    } else if (error) {
+      styles.push({ background: tinycolor(Styles.Colors.danger).setAlpha(highlightFactor).toRgbString() });
+    } else if (selected) {
+      styles.push({ background: tinycolor(Styles.Colors.primary).setAlpha(highlightFactor).toRgbString() });
+    }
+
+    //  Edges
+    const edges = this._getEdges(sel, selected, focused, rowIndex, columnIndex);
+
+    const prevRowFocused = (sel.startRow === rowIndex - 1) && sel.startCol === columnIndex;
+    const prevRowSelected = inBetween(rowIndex - 1, sel.startRow, sel.endRow) &&
+                    inBetween(columnIndex, sel.startCol, sel.endCol);
+    const hasPrevRow = prevRowSelected && (Math.max(sel.startRow, sel.endRow) === rowIndex - 1) || prevRowFocused;
+
+    const prevColumnFocused = sel.startRow === rowIndex && (sel.startCol === columnIndex - 1);
+    const prevColumnSelected = inBetween(rowIndex, sel.startRow, sel.endRow) &&
+                    inBetween(columnIndex - 1, sel.startCol, sel.endCol);
+    const hasPrevColumn = prevColumnSelected && (Math.max(sel.startCol, sel.endCol) === columnIndex - 1) || prevColumnFocused;
+
+    const px = focused ? 2 : 1;
+    const color = Styles.Colors.primary;
+
+    if (edges.left){
+      styles.push({paddingLeft: (6 + 1 - px) + 'px', borderLeftWidth: px + 'px', borderLeftColor: color});
+    }
+    if (edges.right){
+      styles.push({paddingRight: (6 - px) + 'px', borderRightWidth: px + 'px', borderRightColor: color});
+    }
+    if (edges.top){
+      styles.push({paddingTop: (4 + 1 - px) + 'px', borderTopWidth: px + 'px', borderTopColor: color});
+    }
+    if (edges.bottom){
+      styles.push({paddingBottom: (4 - px) + 'px', borderBottomWidth: px + 'px', borderBottomColor: color});
+    }
+
+    //  Previous edges
+    if (hasPrevRow){
+      styles.push({paddingTop: (4 + 1) + 'px', borderTopWidth: 0 + 'px'});
+    }
+    if (hasPrevColumn){
+      styles.push({paddingLeft: (6 + 1) + 'px', borderLeftWidth: 0 + 'px'});
+    }
+
+    //  Final style before customisation
+    return this.props.getStyle ?
+      this.props.getStyle(this.props.data,
+                          this.props.rowData,
+                          this.props.column,
+                          { selected, focused, editing, error, selection: sel },
+                          styles)
+      : styles;
+  }
+
+
+  /**
+   * Rendering
+   */
   render () {
-    const styles = [style.base];
-
-    if (this.props.edgeLeft){ styles.push(style.edgeLeft); }
-    if (this.props.edgeRight){ styles.push(style.edgeRight); }
-    if (this.props.edgeTop){ styles.push(style.edgeTop); }
-    if (this.props.edgeBottom){ styles.push(style.edgeBottom); }
-
-    if (this.props.selected){
-      styles.push(style.selected);
-    }
-
-    if (this.props.focused){
-      styles.push(style.focused);
-    }
-
-    if (this.props.editing && this.props.focused){
-      styles.push(style.editing);
-    }
-
-    if (!this.props.valid){
-      if (this.props.selected){
-        styles.push(style.invalidAndSelect);
-      } else {
-        styles.push(style.invalid);
-      }
-    }
-
     return (
-      <div style={[Styles.FullSize, Styles.Unselectable]}>
+      <div
+        style={ [Styles.FullSize, Styles.Unselectable] }
+        onMouseDown={ this.props.onMouseDown }
+        onMouseOver={ this.props.onMouseOver } >
         <input
           ref='input'
           type='text'
-          style={styles}
-          value={this.props.editing ? this.state.data : this.props.data}
-          onKeyUp={this._handleKeyUp.bind(this)}
-          onChange={this._handleChange}
-          onBlur={this._commitEdit.bind(this, false)}
-          onDoubleClick={this.props.onEdit}
-          disabled={!this.props.editing} />
+          style={ this.getStyle() }
+          value={ this.props.editing ? this.state.data : this.props.data}
+          onKeyUp={ this._handleKeyUp }
+          onChange={ this._handleChange}
+          onBlur={ this._commitEdit }
+          disabled={ !this.props.editing } />
         { this._getSelect() }
       </div>
     );
   }
-
-  shouldComponentUpdate (nextProps, nextState) {
-    if (this.props.focused !== nextProps.focused) { return true; }
-    if (this.props.selected !== nextProps.selected) { return true; }
-    if (this.props.editing !== nextProps.editing) { return true; }
-    if (this.props.data !== nextProps.data) { return true; }
-    if (this.props.valid !== nextProps.valid) { return true; }
-    if (this.props.options !== nextProps.options) { return true; }
-    if (this.state.data !== nextState.data) { return true; }
-
-    if (this.props.edgeLeft !== nextProps.edgeLeft) { return true; }
-    if (this.props.edgeRight !== nextProps.edgeRight) { return true; }
-    if (this.props.edgeTop !== nextProps.edgeTop) { return true; }
-    if (this.props.edgeBottom !== nextProps.edgeBottom) { return true; }
-
-    return false;
-  }
-
 }
 
 Cell.propTypes = {
-  focused: React.PropTypes.bool,
-  selected: React.PropTypes.bool,
-  editing: React.PropTypes.bool,
   data: React.PropTypes.any,
-  onEdit: React.PropTypes.func.isRequired,
+  rowData: React.PropTypes.object,
+  editing: React.PropTypes.bool,
+  selected: React.PropTypes.bool,
+  focused: React.PropTypes.bool,
+  error: React.PropTypes.string,
+
+  column: React.PropTypes.shape({
+    options: React.PropTypes.array
+  }),
+  selection: React.PropTypes.shape({
+    startRow: React.PropTypes.number,
+    endRow: React.PropTypes.number,
+    startCol: React.PropTypes.number,
+    endCol: React.PropTypes.number
+  }),
+  rowIndex: React.PropTypes.number,
+  columnIndex: React.PropTypes.number,
+
+  getStyle: React.PropTypes.func,
   onUpdate: React.PropTypes.func.isRequired,
-  valid: React.PropTypes.bool,
-  options: React.PropTypes.array,
-  edgeLeft: React.PropTypes.bool,
-  edgeRight: React.PropTypes.bool,
-  edgeTop: React.PropTypes.bool,
-  edgeBottom: React.PropTypes.bool
+
+  onMouseDown: React.PropTypes.func,
+  onMouseOver: React.PropTypes.func
 };
 
 export default Cell;
