@@ -12,7 +12,7 @@ class ColumnHeader extends React.Component {
     const selected = this.props.selected;
     const selectedFactor = this.props.selectedFactor;
 
-    const styles = [Styles.Header];
+    const styles = [Styles.Header, Styles.Unselectable];
 
     //  Background
     if (required && selected){

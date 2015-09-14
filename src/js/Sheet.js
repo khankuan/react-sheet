@@ -16,7 +16,7 @@ import ColumnHeader from './ColumnHeader';
 import Cell from './Cell';
 import validator from './Validator';
 
-import { inBetween } from './helper';
+import { inBetween, inBetweenArea } from './helper';
 
 @Radium
 class Sheet extends React.Component {
@@ -31,9 +31,7 @@ class Sheet extends React.Component {
       columnWidthOverrides: {},
       columns: this._getInitialColumns(props),
       data: this._getInitialData(props),
-      selection: {},
-      valueErrors: [],
-      rowErrors: []
+      selection: {}
     };
 
     this.__dragging = {};
@@ -43,15 +41,15 @@ class Sheet extends React.Component {
     const maxRows = Math.max(props.defaultData.length, props.rowCount);
     let data = _.clone(props.defaultData);
     data[maxRows - 1] = data[maxRows - 1];
-    data = data.fill({}, props.defaultData.length, maxRows);
+    data = data.fill({}, props.defaultData.length, maxRows)
+                .map(d => { return { data: d }; });
     return fromJS(data);
   }
 
   _getInitialColumns = (props) => {
     return props.columns.map((column, i) => {
-      const newColumn = {...column};
-      newColumn._index = i;
-      return newColumn;
+      const newColumn = {column, __index: i};
+      return new Immutable.Map(newColumn);
     });
   }
 
@@ -66,7 +64,61 @@ class Sheet extends React.Component {
   /**
    * Internal Methods
    */
+  _getDataWithSelection (prevSel, sel) {
+    const data = this.state.data;
+
+    return data.withMutations(d => {
+
+      const doneMap = {}; //  cache for intersection
+
+      //  Prev selection cells
+      [prevSel, sel].forEach(curSel => {
+        const startRow = Math.min(curSel.startRow, curSel.endRow);
+        const endRow = Math.min(this.state.data.size - 1, Math.max(curSel.startRow, curSel.endRow) + 1);
+
+        for (let i = startRow; i <= endRow; i++){
+          if (doneMap[i]){
+            continue;
+          }
+
+          const curData = d.get(i).set('selection', sel);
+          if (curData !== d.get(i)) {
+            d.set(i, curData);
+          }
+
+          doneMap[i] = true;
+        }
+      });
+
+    });
+  }
+
+  _getColumnsWithSelection (prevSel, sel) {
+    return this.state.columns.map((column, i) => {
+
+      const prevSelected = inBetween(i, prevSel.startCol, prevSel.endCol);
+      const selected = inBetween(i, sel.startCol, sel.endCol);
+      if (prevSelected !== selected){
+        return column.set('__selected', selected);
+      } else {
+        return column;
+      }
+    });
+  }
+
+  _getRowIndexDataWithSelection (sel) {
+    const allSelected = sel.startRow === 0 && sel.endRow === this.state.data.size - 1 &&
+                          sel.startCol === 0 && sel.endCol === this.state.columns.length - 1;
+
+    if (!this.state.rowIndexData || this.state.rowIndexData.__allSelected !== allSelected){
+      return { __allSelected: allSelected };
+    } else {
+      return this.state.rowIndexData;
+    }
+  }
+
   _setSelectionPoint = (startRow, startCol, endRow, endCol) => {
+    const prevSelection = this.state.selection;
     const selection = {
       startRow: Math.max(Math.min(startRow, this.props.rowCount - 1), 0),
       endRow: Math.max(Math.min(endRow, this.props.rowCount - 1), 0),
@@ -74,12 +126,20 @@ class Sheet extends React.Component {
       endCol: Math.max(Math.min(endCol, this.state.columns.length - 1), 0)
     };
 
-    this.setState({ selection });
+    if (_.isEqual(selection, this.state.selection)){
+      return;
+    }
+    this.__selection = selection;
+    const data = this._getDataWithSelection(prevSelection, selection);
+    const columns = this._getColumnsWithSelection(prevSelection, selection);
+    const rowIndexData = this._getRowIndexDataWithSelection(selection);
+
+    this.setState({ selection, columns, rowIndexData, data });
   }
 
   _setSelectionObject (obj) {
-    const sel = this.state.selection;
-    _.assign(sel, obj);
+    const sel = {};
+    _.assign(sel, this.state.selection, obj);
     this._setSelectionPoint(sel.startRow, sel.startCol, sel.endRow, sel.endCol);
   }
 
@@ -87,8 +147,8 @@ class Sheet extends React.Component {
     return this.state.data.get(i);
   }
 
-  _cellDataGetter = (cellKey, rowData) => {
-    return rowData.get(cellKey);
+  _cellDataGetter = (cellKey, row) => {
+    return row.get('data').get(cellKey);
   }
 
 
@@ -101,7 +161,8 @@ class Sheet extends React.Component {
     this.setState({ columnWidthOverrides });
   }
 
-  _handleGlobalMouseDown = (type, selection) => {
+  _handleGlobalMouseDown = (type, selection, e) => {
+    e.preventDefault();
     this.__dragging[type] = true;
     this._setSelectionObject(selection);
   }
@@ -122,12 +183,16 @@ class Sheet extends React.Component {
 
   _handleDataUpdate (rowIndex, dataKey, value){
     let data = this.state.data;
-    let rowData = data.get(rowIndex);
+    let row = data.get(rowIndex);
+
+    let rowData = row.get('data');
     if (value){
-      data = data.set(rowIndex, rowData.set(dataKey, value));
+      row = row.set('data', rowData.set(dataKey, value));
     } else {
-      data = data.set(rowIndex, rowData.delete(dataKey));
+      row = row.set('data', rowData.delete(dataKey));
     }
+
+    data = data.set(rowIndex, row);
     this.setState({data, editing: false});
   }
 
@@ -135,20 +200,16 @@ class Sheet extends React.Component {
   /**
    * Rendering
    */
-  _indexHeaderRenderer = (label, cellKey, columnData, rowData, width) => {
-    const sel = this.state.selection;
-    const allSelected = sel.startRow === 0 && sel.endRow === this.state.data.size - 1 &&
-                          sel.startCol === 0 && sel.endCol === this.state.columns.length - 1;
-
+  __indexHeaderRenderer = (label, cellKey, column, row, width) => {
     return (
       <RowIndex
-        selected={ allSelected }
+        selected={ column.__allSelected }
         getStyle={ this.props.getRowHeaderStyle }
         onMouseDown={ this._handleSelectAll } />
     );
   }
 
-  _indexRenderer = (cellData, cellKey, rowData, rowIndex, columnData, width) => {
+  __indexRenderer = (cellData, cellKey, row, rowIndex, column, width) => {
     const selected = inBetween(rowIndex,
                         this.state.selection.startRow,
                         this.state.selection.endRow);
@@ -157,7 +218,7 @@ class Sheet extends React.Component {
       <RowIndex
         index={ rowIndex }
         selected={ selected }
-        errors={ _.union(this.state.rowErrors[rowIndex], this.state.valueErrors[rowIndex]) }
+        errors={ row.get('errors') }
         getStyle={ this.props.getRowHeaderStyle }
         onMouseDown={ this._handleGlobalMouseDown.bind(this, 'row', {
           startRow: rowIndex,
@@ -171,48 +232,66 @@ class Sheet extends React.Component {
     );
   }
 
-  _headerRenderer = (label, cellKey, columnData, rowData, width) => {
-    const sel = this.state.selection;
-    const selected = inBetween(columnData._index, sel.startCol, sel.endCol);
-
+  _headerRenderer = (label, cellKey, column, row, width) => {
     return (
       <ColumnHeader
-        column={ columnData }
-        selected={ selected }
+        column={ column.get('column') }
+        selected={ column.get('__selected') }
         getStyle={ this.props.getColumnHeaderStyle }
         onMouseDown={this._handleGlobalMouseDown.bind(this, 'column', {
           startRow: 0,
           endRow: this.state.data.size,
-          startCol: columnData._index,
-          endCol: columnData._index
+          startCol: column.get('__index'),
+          endCol: column.get('__index')
         }) }
         onMouseEnter={ this._handleGlobalMouseOver.bind(this, 'column', {
-          endCol: columnData._index
+          endCol: column.get('__index')
         }) } />
     );
   }
 
-  _cellRenderer = (cellData, cellKey, rowData, rowIndex, columnData, width) => {
-    const sel = this.state.selection;
-    const focused = sel.startRow === rowIndex && sel.startCol === columnData._index;
-    const selected = inBetween(rowIndex, sel.startRow, sel.endRow) &&
-                      inBetween(columnData._index, sel.startCol, sel.endCol);
+  _cellRenderer = (cellData, cellKey, row, rowIndex, column, width) => {
+    const columnData = column.get('column');
+    const columnIndex = column.get('__index');
+    const sel = row.get('selection') || {};
 
-    const error = validator(rowData, cellData, columnData.required, columnData.options, columnData.validator);
+    const focused = sel.startRow === rowIndex && sel.startCol === columnIndex;
+    const selected = inBetweenArea(rowIndex, columnIndex, sel.startRow, sel.endRow, sel.startCol, sel.endCol);
+
+    const prevRowFocused = (sel.startRow === rowIndex - 1) && (sel.startCol === columnIndex);
+    const prevRowSelected = inBetweenArea(rowIndex - 1, columnIndex, sel.startRow, sel.endRow, sel.startCol, sel.endCol);
+    const hasPrevRow = prevRowSelected && (Math.max(sel.startRow, sel.endRow) === rowIndex - 1) || prevRowFocused;
+
+    const prevColumnFocused = (sel.startRow === rowIndex) && (sel.startCol === columnIndex - 1);
+    const prevColumnSelected = inBetweenArea(rowIndex, columnIndex - 1, sel.startRow, sel.endRow, sel.startCol, sel.endCol);
+    const hasPrevColumn = prevColumnSelected && (Math.max(sel.startCol, sel.endCol) === columnIndex - 1) || prevColumnFocused;
+
+    const isLeft = Math.min(sel.startCol, sel.endCol) === columnIndex;
+    const isRight = Math.max(sel.startCol, sel.endCol) === columnIndex;
+    const isTop = Math.min(sel.startRow, sel.endRow) === rowIndex;
+    const isBottom = Math.max(sel.startRow, sel.endRow) === rowIndex;
+
+    const error = validator(row.get('data'), cellData, columnData.required, columnData.options, columnData.validator);
 
     return (
       <Cell
         data={ (!this.state.editing && columnData.formatter) ? columnData.formatter(cellData) : cellData }
-        rowData={ rowData }
+        rowData={ row.get('data') }
         editing={ focused && this.state.editing }
         focused={ focused }
         selected={ selected }
+        hasPrevRow={ hasPrevRow }
+        hasPrevColumn={ hasPrevColumn }
+        isLeft={ isLeft }
+        isRight={ isRight }
+        isTop={ isTop }
+        isBottom={ isBottom }
         error={ error }
 
         column={ columnData }
         selection={ sel }
         rowIndex={ rowIndex }
-        columnIndex={ columnData._index }
+        columnIndex={ columnIndex }
 
         getStyle={ this.props.getCellStyle }
         onUpdate={ this._handleDataUpdate.bind(this, rowIndex, cellKey) }
@@ -220,12 +299,12 @@ class Sheet extends React.Component {
         onMouseDown={this._handleGlobalMouseDown.bind(this, 'cell', {
           startRow: rowIndex,
           endRow: rowIndex,
-          startCol: columnData._index,
-          endCol: columnData._index
+          startCol: column.get('__index'),
+          endCol: column.get('__index')
         }) }
         onMouseOver={this._handleGlobalMouseOver.bind(this, 'cell', {
           endRow: rowIndex,
-          endCol: columnData._index
+          endCol: column.get('__index')
         }) } />
     );
   }
@@ -236,33 +315,35 @@ class Sheet extends React.Component {
     //  Index
     columns.push(
       <Column
-        key='__index'
-        dataKey='__index'
+        key='___index'
+        dataKey='___index'
+        columnData={this.state.rowIndexData}
         width={10 + 14 * ( this.state.data.size + '').length }
-        headerRenderer={ this._indexHeaderRenderer.bind(this) }
-        cellRenderer={ this._indexRenderer.bind(this) }
+        headerRenderer={ this.__indexHeaderRenderer }
+        cellRenderer={ this.__indexRenderer }
         fixed={true} />
     );
 
     //  Columns
     this.state.columns.forEach((column, i) => {
-      column.columnData = column;
-      column.cellRenderer = this._cellRenderer.bind(this);
-      column.headerRenderer = this._headerRenderer.bind(this);  //  TODO???
-      column.width = this.state.columnWidthOverrides[column.dataKey] || column.width || 150;
-      column.allowCellsRecycling = false;
-      column.isResizable = true;
+      const columnData = column.get('column');
+      columnData.columnData = column;
+      columnData.cellRenderer = this._cellRenderer;
+      columnData.headerRenderer = this._headerRenderer;
+      columnData.width = this.state.columnWidthOverrides[columnData.dataKey] || columnData.width || 150;
+      columnData.allowCellsRecycling = false;
+      columnData.isResizable = true;
 
       //  Last column fills up all the remaining width
       if (i === this.state.columns.length - 1){
-        column.flexGrow = 1;
+        columnData.flexGrow = 1;
       }
 
       columns.push(
         <Column
-          { ...column }
+          { ...columnData }
           cellDataGetter={ this._cellDataGetter }
-          key={ column.dataKey } />
+          key={ columnData.dataKey } />
       );
     });
 

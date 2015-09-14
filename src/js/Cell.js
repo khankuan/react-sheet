@@ -3,7 +3,7 @@ import Radium from 'radium';
 import tinycolor from 'tinycolor2';
 import Styles from '../styles';
 
-import { inBetween } from './helper';
+import { inBetween, inBetweenArea, isEqualObject } from './helper';
 
 @Radium
 class Cell extends React.Component {
@@ -53,10 +53,10 @@ class Cell extends React.Component {
 
   _getEdges (sel, selected, focused, rowIndex, columnIndex) {
     return {
-      left: selected && (Math.min(sel.startCol, sel.endCol) === columnIndex) || focused,
-      right: selected && (Math.max(sel.startCol, sel.endCol) === columnIndex) || focused,
-      top: selected && (Math.min(sel.startRow, sel.endRow) === rowIndex) || focused,
-      bottom: selected && (Math.max(sel.startRow, sel.endRow) === rowIndex) || focused
+      left: selected && this.props.isLeft || focused,
+      right: selected && this.props.isRight || focused,
+      top: selected && this.props.isTop || focused,
+      bottom: selected && this.props.isBottom || focused
     };
   }
 
@@ -129,8 +129,10 @@ class Cell extends React.Component {
   getStyle () {
     const sel = this.props.selection;
     const editing = this.props.editing;
-    const selected = this.props.selected;
     const focused = this.props.focused;
+    const selected = this.props.selected;
+    const hasPrevRow = this.props.hasPrevRow;
+    const hasPrevColumn = this.props.hasPrevColumn;
     const error = this.props.error;
     const rowIndex = this.props.rowIndex;
     const columnIndex = this.props.columnIndex;
@@ -138,7 +140,7 @@ class Cell extends React.Component {
     const styles = [Styles.Cell.input];
 
     if (!editing) {
-      styles.push(Styles.Unselectable);
+      styles.push({pointerEvents: 'none'});
     }
 
     //  Background color
@@ -155,17 +157,6 @@ class Cell extends React.Component {
 
     //  Edges
     const edges = this._getEdges(sel, selected, focused, rowIndex, columnIndex);
-
-    const prevRowFocused = (sel.startRow === rowIndex - 1) && sel.startCol === columnIndex;
-    const prevRowSelected = inBetween(rowIndex - 1, sel.startRow, sel.endRow) &&
-                    inBetween(columnIndex, sel.startCol, sel.endCol);
-    const hasPrevRow = prevRowSelected && (Math.max(sel.startRow, sel.endRow) === rowIndex - 1) || prevRowFocused;
-
-    const prevColumnFocused = sel.startRow === rowIndex && (sel.startCol === columnIndex - 1);
-    const prevColumnSelected = inBetween(rowIndex, sel.startRow, sel.endRow) &&
-                    inBetween(columnIndex - 1, sel.startCol, sel.endCol);
-    const hasPrevColumn = prevColumnSelected && (Math.max(sel.startCol, sel.endCol) === columnIndex - 1) || prevColumnFocused;
-
     const px = focused ? 2 : 1;
     const color = Styles.Colors.primary;
 
@@ -204,10 +195,27 @@ class Cell extends React.Component {
   /**
    * Rendering
    */
+  shouldComponentUpdate (nextProps, nextState) {
+    //return true;
+    const ignoreKeys = {selection: true};
+    if (!isEqualObject(this.props, nextProps, ignoreKeys) ||
+        !isEqualObject(this.state, nextState)){
+      return true;
+    }
+    return false;
+  }
+
+  componentDidUpdate () {
+    const input = React.findDOMNode(this.refs.input);
+    if (!this.props.editing && input === document.activeElement){
+      input.blur();
+    }
+  }
+
   render () {
     return (
       <div
-        style={ [Styles.FullSize, Styles.Unselectable] }
+        style={ [Styles.Stretch, Styles.Unselectable] }
         onMouseDown={ this.props.onMouseDown }
         onMouseOver={ this.props.onMouseOver } >
         <input
@@ -217,8 +225,7 @@ class Cell extends React.Component {
           value={ this.props.editing ? this.state.data : this.props.data}
           onKeyUp={ this._handleKeyUp }
           onChange={ this._handleChange}
-          onBlur={ this._commitEdit }
-          disabled={ !this.props.editing } />
+          onBlur={ this._commitEdit } />
         { this._getSelect() }
       </div>
     );
@@ -228,9 +235,15 @@ class Cell extends React.Component {
 Cell.propTypes = {
   data: React.PropTypes.any,
   rowData: React.PropTypes.object,
-  editing: React.PropTypes.bool,
   selected: React.PropTypes.bool,
   focused: React.PropTypes.bool,
+  hasPrevRow: React.PropTypes.bool,
+  hasPrevColumn: React.PropTypes.bool,
+  isLeft: React.PropTypes.bool,
+  isRight: React.PropTypes.bool,
+  isTop: React.PropTypes.bool,
+  isBottom: React.PropTypes.bool,
+  editing: React.PropTypes.bool,
   error: React.PropTypes.string,
 
   column: React.PropTypes.shape({

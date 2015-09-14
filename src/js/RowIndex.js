@@ -11,7 +11,7 @@ class RowIndex extends React.Component {
     const errors = this.props.errors;
     const hasErrors = errors && errors.length > 0;
     const selectedFactor = this.props.selectedFactor;
-    const styles = [Styles.Header];
+    const styles = [Styles.Stretch, Styles.Header, Styles.Unselectable];
 
     //  Background
     if (hasErrors && selected){
