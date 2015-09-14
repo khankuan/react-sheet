@@ -9,7 +9,7 @@ class RowIndex extends React.Component {
   _getStyle = () => {
     const selected = this.props.selected;
     const errors = this.props.errors;
-    const hasErrors = errors && errors.length > 0;
+    const hasErrors = errors && Object.keys(errors).length > 0;
     const selectedFactor = this.props.selectedFactor;
     const styles = [Styles.Stretch, Styles.Header, Styles.Unselectable];
 

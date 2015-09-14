@@ -27,23 +27,29 @@ class Sheet extends React.Component {
   constructor (props) {
     super(props);
 
+    const columns = this._getInitialColumns(props);
     this.state = {
       columnWidthOverrides: {},
-      columns: this._getInitialColumns(props),
-      data: this._getInitialData(props),
+      columns: columns,
+      data: this._getInitialData(props, columns),
       selection: {}
     };
 
     this.__dragging = {};
   }
 
-  _getInitialData = (props) => {
+  _getInitialData = (props, columns) => {
     const maxRows = Math.max(props.defaultData.length, props.rowCount);
     let data = _.clone(props.defaultData);
     data[maxRows - 1] = data[maxRows - 1];
     data = data.fill({}, props.defaultData.length, maxRows)
                 .map(d => { return { data: d }; });
-    return fromJS(data);
+
+    data = fromJS(data).map(row => {
+      return row.set('errors', this._validateRow(props.rowValidator, columns, row));
+    });
+
+    return data;
   }
 
   _getInitialColumns = (props) => {
@@ -64,6 +70,35 @@ class Sheet extends React.Component {
   /**
    * Internal Methods
    */
+  _validateRow (rowValidator, columns, row) {
+    const errors = {};
+    const rowData = row.get('data');
+
+    //  No data
+    if (rowData.size === 0){
+      return errors;
+    }
+
+    //  Per column
+    columns.forEach(column => {
+      column = column.get('column');
+      const error = validator(rowData, rowData.get(column.dataKey), column.required, column.options, column.validator);
+      if (error) {
+        errors[column.dataKey] = error;
+      }
+    });
+
+    //  Per row
+    if (rowValidator){
+      const error = rowValidator(rowData);
+      if (error) {
+        errors.__row = error;
+      }
+    }
+
+    return errors;
+  }
+
   _getDataWithSelection (prevSel, sel) {
     const data = this.state.data;
 
@@ -162,7 +197,9 @@ class Sheet extends React.Component {
   }
 
   _handleGlobalMouseDown = (type, selection, e) => {
-    e.preventDefault();
+    if (e.target.tagName !== 'SELECT'){  //  disable i-beam cursor when dragging
+      e.preventDefault();
+    }
     this.__dragging[type] = true;
     this._setSelectionObject(selection);
   }
@@ -191,6 +228,9 @@ class Sheet extends React.Component {
     } else {
       row = row.set('data', rowData.delete(dataKey));
     }
+
+    //  Errors
+    row = row.set('errors', this._validateRow(this.props.rowValidator, this.state.columns, row));
 
     data = data.set(rowIndex, row);
     this.setState({data, editing: false});
@@ -271,7 +311,7 @@ class Sheet extends React.Component {
     const isTop = Math.min(sel.startRow, sel.endRow) === rowIndex;
     const isBottom = Math.max(sel.startRow, sel.endRow) === rowIndex;
 
-    const error = validator(row.get('data'), cellData, columnData.required, columnData.options, columnData.validator);
+    const errors = row.get('errors');
 
     return (
       <Cell
@@ -286,7 +326,7 @@ class Sheet extends React.Component {
         isRight={ isRight }
         isTop={ isTop }
         isBottom={ isBottom }
-        error={ error }
+        error={ errors[cellKey] }
 
         column={ columnData }
         selection={ sel }
