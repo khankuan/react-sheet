@@ -21,7 +21,7 @@ class Cell extends React.Component {
 
   componentWillReceiveProps (nextProps) {
     const startingEdit = (!this.props.editing && nextProps.editing);
-    if (startingEdit){
+    if (startingEdit) {
       this.setState({
         data: nextProps.data
       }, () => {
@@ -46,9 +46,7 @@ class Cell extends React.Component {
   }
 
   _revert = () => {
-    this.setState({data: this.props.data}, () => {
-      this.props.onUpdate(this.props.data, false);
-    });
+    this.setState({data: this.props.data});
   }
 
   _getEdges (sel, selected, focused, rowIndex, columnIndex) {
@@ -63,10 +61,11 @@ class Cell extends React.Component {
   /**
    * Handlers
    */
-  _handleKeyUp = (e) => {
-    if (e.key === 'Enter') {
+  _handleKeyDown = (e) => {
+    //  Enter, Tab, Up, Down
+    if (e.keyCode === 13 || e.keyCode === 9 || e.keyCode === 38 || e.keyCode === 40) {
       this._commitEdit();
-    } else if (e.key === 'Escape'){
+    } else if (e.keyCode === 27){
       this._revert();
     }
   }
@@ -89,6 +88,14 @@ class Cell extends React.Component {
 
   _preventDefault = (e) => {
     e.preventDefault();
+  }
+
+  _handleBlur = (e) => {
+    setTimeout(() => {
+      if (this.props.editing) {
+        this._commitEdit();
+      }
+    }, 0);
   }
 
 
@@ -151,14 +158,23 @@ class Cell extends React.Component {
 
     //  Background color
     const highlightFactor = Styles.Colors.highlightFactor;
+    let background;
     if (selected && error) {
-      styles.push({ background: tinycolor
-                                .mix(tinycolor(Styles.Colors.danger), tinycolor(Styles.Colors.primary), 30)
-                                .setAlpha(highlightFactor).toRgbString() });
+      background = tinycolor.mix(tinycolor(Styles.Colors.danger), tinycolor(Styles.Colors.primary), 30);
     } else if (error) {
-      styles.push({ background: tinycolor(Styles.Colors.danger).setAlpha(highlightFactor).toRgbString() });
+      background = tinycolor(Styles.Colors.danger);
     } else if (selected) {
-      styles.push({ background: tinycolor(Styles.Colors.primary).setAlpha(highlightFactor).toRgbString() });
+      background = tinycolor(Styles.Colors.primary);
+    }
+
+    if (editing && background){
+      background = tinycolor(Styles.Colors.white);
+    }
+
+    if (background){
+      styles.push({
+        background: background.setAlpha(highlightFactor).toRgbString()
+      });
     }
 
     //  Edges
@@ -217,15 +233,16 @@ class Cell extends React.Component {
         style={ [Styles.Stretch, Styles.Unselectable] }
         onDrag={ this._preventDefault }
         onMouseDown={ this.props.onMouseDown }
-        onMouseOver={ this.props.onMouseOver } >
+        onMouseOver={ this.props.onMouseOver }
+        onDoubleClick={ this.props.onDoubleClick } >
         <input
           ref='input'
           type='text'
           style={ this.getStyle() }
           value={ this.props.editing ? this.state.data : this.props.data }
-          onKeyUp={ this._handleKeyUp }
+          onKeyDown={ this._handleKeyDown }
           onChange={ this._handleChange}
-          onBlur={ this._commitEdit } />
+          onBlur={ this._handleBlur } />
         { this._getSelect() }
       </div>
     );
@@ -262,7 +279,8 @@ Cell.propTypes = {
   onUpdate: React.PropTypes.func.isRequired,
 
   onMouseDown: React.PropTypes.func,
-  onMouseOver: React.PropTypes.func
+  onMouseOver: React.PropTypes.func,
+  onDoubleClick: React.PropTypes.func
 };
 
 export default Cell;

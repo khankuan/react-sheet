@@ -188,6 +188,38 @@ class Sheet extends React.Component {
     return row.get('data').get(cellKey);
   }
 
+  _setEditing = (editing, data) => {
+    if (editing === !!this.state.editing){
+      return;
+    }
+
+    data = data || this.state.data;
+
+    const prevSel = this.state.editing;
+    if (prevSel) {
+      const prevEditingRow = data.get(prevSel.startRow).delete('editing');
+      data = data.set(prevSel.startRow, prevEditingRow);
+    }
+
+    const sel = this.state.selection;
+    let row = data.get(sel.startRow);
+    if (editing) {
+      row = row.set('editing', sel.startCol);
+    } else {
+      row = row.delete('editing');
+    }
+    data = data.set(sel.startRow, row);
+
+    this.setState({ editing: editing ? sel : null, data });
+    if (!editing) {
+      this._focusBase();
+    }
+  }
+
+  _focusBase = () => {
+    React.findDOMNode(this.refs.base).focus();
+  }
+
 
   /**
    * Handlers
@@ -232,7 +264,7 @@ class Sheet extends React.Component {
     row = row.set('errors', this._validateRow(this.props.rowValidator, this.state.columns, row));
 
     data = data.set(rowIndex, row);
-    this.setState({data, editing: false});
+    this._setEditing(false, data);
   }
 
   _handleKeyDown = (e) => {
@@ -243,6 +275,7 @@ class Sheet extends React.Component {
     //  Arrow events
     const sel = this.state.selection;
     const ctrl = (e.ctrlKey || e.metaKey);
+    const editing = this.state.editing;
 
     if (e.keyCode === 38){
       e.preventDefault();
@@ -260,7 +293,7 @@ class Sheet extends React.Component {
         this._setSelectionPoint(sel.startRow + 1, sel.startCol, sel.startRow + 1, sel.startCol);
       }
     }
-    else if (e.keyCode === 37){
+    else if (e.keyCode === 37 && !editing){
       e.preventDefault();
       if (e.shiftKey){
         this._setSelectionObject({ endCol: ctrl ? 0 : sel.endCol - 1 });
@@ -268,7 +301,7 @@ class Sheet extends React.Component {
         this._setSelectionPoint(sel.startRow, sel.startCol - 1, sel.startRow, sel.startCol - 1);
       }
     }
-    else if (e.keyCode === 39){
+    else if (e.keyCode === 39 && !editing){
       e.preventDefault();
       if (e.shiftKey){
         this._setSelectionObject({ endCol: ctrl ? this.props.columns.length : sel.endCol + 1 });
@@ -288,12 +321,41 @@ class Sheet extends React.Component {
         this._setSelectionPoint(sel.startRow, sel.startCol + 1, sel.startRow, sel.startCol + 1);
       }
     }
-    else if (!ignoreKeyCodes[e.keyCode] && !this.state.editing && !isCommand(e)){
-      this.setState({editing: true});
+    else if (e.keyCode === 27 && editing){
+      this._setEditing(false);
     }
-    console.log(e.key, e.keyCode, e);
+    else if (!editing && (e.keyCode === 8 || e.keyCode === 46)){
+      this._handleDelete(e);
+    }
+    else if (!ignoreKeyCodes[e.keyCode] && !this.state.editing && !isCommand(e)){
+      this._setEditing(true);
+    }
+    //console.info(e.key, e.keyCode, e);
   }
 
+  _handleDoubleClick = (e) => {
+    this._setEditing(true);
+  }
+
+  _handleDelete = (e) => {
+    e.preventDefault();
+
+    let data = this.state.data;
+    const sel = this.state.selection;
+    const columns = this.state.columns;
+
+    for (let rowI = Math.min(sel.startRow, sel.endRow); rowI <= Math.max(sel.startRow, sel.endRow); rowI++){
+      let row = data.get(rowI);
+      let rowData = row.get('data');
+      for (let colI = Math.min(sel.startCol, sel.endCol); colI <= Math.max(sel.startCol, sel.endCol); colI++){
+        const dataKey = columns[colI].get('column').dataKey;
+        rowData = rowData.delete(dataKey);
+      }
+      row = row.set('data', rowData);
+      data = data.set(rowI, row);
+    }
+    this.setState({ data });
+  }
 
 
 
@@ -372,12 +434,13 @@ class Sheet extends React.Component {
     const isBottom = Math.max(sel.startRow, sel.endRow) === rowIndex;
 
     const errors = row.get('errors');
+    const editing = row.get('editing') === columnIndex && focused;
 
     return (
       <Cell
-        data={ (!this.state.editing && columnData.formatter) ? columnData.formatter(cellData) : cellData }
+        data={ (!editing && columnData.formatter) ? columnData.formatter(cellData) : cellData }
         rowData={ row.get('data') }
-        editing={ focused && this.state.editing }
+        editing={ editing }
         focused={ focused }
         selected={ selected }
         hasPrevRow={ hasPrevRow }
@@ -405,7 +468,8 @@ class Sheet extends React.Component {
         onMouseOver={this._handleGlobalMouseOver.bind(this, 'cell', {
           endRow: rowIndex,
           endCol: column.get('__index')
-        }) } />
+        }) }
+        onDoubleClick={this._handleDoubleClick} />
     );
   }
 
@@ -455,7 +519,6 @@ class Sheet extends React.Component {
       <div
         ref='base'
         style={ [
-          //Styles.Unselectable,
           Styles.FullSize,
           Styles.Sheet.base
         ] }

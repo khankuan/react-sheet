@@ -8,5 +8,5 @@ export default {
   lightgrey: '#f3f3f3',
 
   selectedFactor: 12,
-  highlightFactor: 0.15
+  highlightFactor: 0.2
 };

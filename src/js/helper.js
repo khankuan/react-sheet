@@ -35,6 +35,7 @@ export const ignoreKeyCodes = {
   38: true,
   39: true,
   40: true,
+  13: true,
   16: true,
   17: true,
   18: true,
