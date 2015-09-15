@@ -91,11 +91,9 @@ class Cell extends React.Component {
   }
 
   _handleBlur = (e) => {
-    setTimeout(() => {
-      if (this.props.editing) {
-        this._commitEdit();
-      }
-    }, 0);
+    if (this.props.editing) {
+      this._commitEdit();
+    }
   }
 
 

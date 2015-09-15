@@ -45,9 +45,8 @@ class Sheet extends React.Component {
     data = data.fill({}, props.defaultData.length, maxRows)
                 .map(d => { return { data: d }; });
 
-    data = fromJS(data).map(row => {
-      return row.set('errors', this._validateRow(props.rowValidator, columns, row));
-    });
+    data = fromJS(data);
+    data = this._dataWithErrors(props.rowValidator, columns, data);
 
     return data;
   }
@@ -70,8 +69,44 @@ class Sheet extends React.Component {
   }
 
   /**
+   * External Methods
+   */
+  getValidatedData = (cb) => {
+    return new Promise((resolve, reject) => {
+      const rowValidator = this.props.rowValidator;
+      const columns = this.state.columns;
+
+      const errors = [];
+      this.state.data.forEach((d, i) => {
+        if (d.get('data').size === 0){
+          return;
+        }
+
+        const error = this._validateRow(rowValidator, columns, d);
+        if (error) {
+          errors.push({row: i, error});
+        }
+      });
+
+      if (errors.length > 0) {
+        reject(errors);
+        return;
+      }
+
+      resolve(this.state.data.filter(d => d.get('data').size > 0).map(d => d.get('data')).toJS());
+    });
+  }
+
+
+  /**
    * Internal Methods
    */
+  _dataWithErrors = (rowValidator, columns, data) => {
+    return data.map(row => {
+      return row.set('errors', this._validateRow(rowValidator, columns, row));
+    });
+  }
+
   _validateRow (rowValidator, columns, row) {
     const errors = {};
     const rowData = row.get('data');
@@ -98,7 +133,7 @@ class Sheet extends React.Component {
       }
     }
 
-    return errors;
+    return Object.keys(errors).length > 0 ? errors : null;
   }
 
   _getDataWithSelection (prevSel, sel) {
@@ -189,26 +224,24 @@ class Sheet extends React.Component {
   }
 
   _setEditing = (editing, data) => {
-    if (editing === !!this.state.editing){
-      return;
-    }
-
-    data = data || this.state.data;
-
-    const prevSel = this.state.editing;
-    if (prevSel) {
-      const prevEditingRow = data.get(prevSel.startRow).delete('editing');
-      data = data.set(prevSel.startRow, prevEditingRow);
-    }
-
     const sel = this.state.selection;
-    let row = data.get(sel.startRow);
-    if (editing) {
-      row = row.set('editing', sel.startCol);
-    } else {
-      row = row.delete('editing');
+    if (editing !== !!this.state.editing){
+      data = data || this.state.data;
+
+      const prevSel = this.state.editing;
+      if (prevSel) {
+        const prevEditingRow = data.get(prevSel.startRow).delete('editing');
+        data = data.set(prevSel.startRow, prevEditingRow);
+      }
+
+      let row = data.get(sel.startRow);
+      if (editing) {
+        row = row.set('editing', sel.startCol);
+      } else {
+        row = row.delete('editing');
+      }
+      data = data.set(sel.startRow, row);
     }
-    data = data.set(sel.startRow, row);
 
     this.setState({ editing: editing ? sel : null, data });
     if (!editing) {
@@ -352,6 +385,7 @@ class Sheet extends React.Component {
         rowData = rowData.delete(dataKey);
       }
       row = row.set('data', rowData);
+      row = row.set('errors', this._validateRow(this.props.rowValidator, columns, row));
       data = data.set(rowI, row);
     }
     this.setState({ data });
@@ -433,7 +467,7 @@ class Sheet extends React.Component {
     const isTop = Math.min(sel.startRow, sel.endRow) === rowIndex;
     const isBottom = Math.max(sel.startRow, sel.endRow) === rowIndex;
 
-    const errors = row.get('errors');
+    const errors = row.get('errors') || {};
     const editing = row.get('editing') === columnIndex && focused;
 
     return (

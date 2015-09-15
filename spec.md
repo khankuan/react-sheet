@@ -34,7 +34,7 @@
 
 
 ##Methods
-- `getValidatedData()`: Returns array of object, or throws exception if validation fails
+- `getValidatedData(cb)`: cb(err, data)
 
 
 ##Behaviour
