@@ -41,7 +41,8 @@ export const ignoreKeyCodes = {
   18: true,
   27: true,
   91: true,
-  93: true
+  93: true,
+  224: true
 };
 
 

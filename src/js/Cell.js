@@ -151,6 +151,7 @@ class Cell extends React.Component {
     const styles = [Styles.Cell.input];
 
     if (!editing) {
+      styles.push(Styles.Unselectable);
       styles.push({pointerEvents: 'none'});
     }
 

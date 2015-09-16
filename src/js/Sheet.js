@@ -360,7 +360,7 @@ class Sheet extends React.Component {
   }
 
   _handleGlobalMouseOver = (type, selection) => {
-    if (this.__dragging[type]) {
+    if (this.__dragging[type] && !this.state.editing) {
       this._setSelectionObject(selection);
     }
   }
@@ -457,6 +457,25 @@ class Sheet extends React.Component {
       } else {
         this._handleUndo();
       }
+    }
+    else if (ctrl && e.keyCode === 67 && !editing){
+      //  Force a selection so firefox will trigger oncopy
+      const selection = document.getSelection();
+      const range = document.createRange();
+      range.setStartBefore(React.findDOMNode(this.refs.dummy));
+      range.setEndAfter(React.findDOMNode(this.refs.dummy));
+      selection.addRange(range);
+      setTimeout(() => {
+        selection.removeAllRanges();
+      });
+    }
+
+    else if (ctrl && e.keyCode === 86 && !editing){
+      //  Force a selection so firefox will trigger onpaste
+      React.findDOMNode(this.refs.dummy).focus();
+      setTimeout(() => {
+        React.findDOMNode(this.refs.dummy).blur();
+      });
     }
     else if (!ignoreKeyCodes[e.keyCode] && !this.state.editing && !isCommand(e)){
       this._setEditing(true);
@@ -794,6 +813,10 @@ class Sheet extends React.Component {
             { this._getColumns() }
           </Table>
         </Autosize>
+        <input
+          ref='dummy'
+          type='text'
+          style={{width: '0px'}} />
       </div>
     );
   }
