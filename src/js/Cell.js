@@ -239,7 +239,7 @@ class Cell extends React.Component {
           style={ this.getStyle() }
           value={ this.props.editing ? this.state.data : this.props.data }
           onKeyDown={ this._handleKeyDown }
-          onChange={ this._handleChange}
+          onChange={ this._handleChange }
           onBlur={ this._handleBlur } />
         { this._getSelect() }
       </div>

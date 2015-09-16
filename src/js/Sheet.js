@@ -36,6 +36,10 @@ class Sheet extends React.Component {
     };
 
     this.__dragging = {};
+
+    this.__history = [];
+    this.__history.push(this.state.data);
+    this.__historyIndex = this.__history.length;
   }
 
   _getInitialData = (props, columns) => {
@@ -72,6 +76,29 @@ class Sheet extends React.Component {
     window.removeEventListener('paste', this._handlePaste);
     window.removeEventListener('copy', this._handleCopy);
     window.removeEventListener('cut', this._handleCut);
+  }
+
+  componentDidUpdate (prevProps, prevState) {
+    const data = this.state.data;
+    const previousData = this.__history[this.__historyIndex - 1];
+    if (prevState.data !== data && previousData !== data){
+
+      let foundChanges = false;
+      for (let i = 0; i < data.size; i++){
+        if (data.get(i).get('data') !== previousData.get(i).get('data')){
+          foundChanges = true;
+          break;
+        }
+      }
+
+      if (!foundChanges) {
+        return;
+      }
+
+      this.__history = this.__history.splice(0, this.__historyIndex );
+      this.__history.push(this.state.data);
+      this.__historyIndex = this.__history.length;
+    }
   }
 
   /**
@@ -195,7 +222,7 @@ class Sheet extends React.Component {
     }
   }
 
-  _setSelectionPoint = (startRow, endRow, startCol, endCol) => {
+  _setSelectionPoint = (startRow, endRow, startCol, endCol, force) => {
     const prevSelection = this.state.selection;
     const selection = {
       startRow: Math.max(Math.min(startRow, this.props.rowCount - 1), 0),
@@ -204,10 +231,10 @@ class Sheet extends React.Component {
       endCol: Math.max(Math.min(endCol, this.state.columns.length - 1), 0)
     };
 
-    if (_.isEqual(selection, this.state.selection)){
+    if (_.isEqual(selection, this.state.selection) && !force){
       return;
     }
-    this.__selection = selection;
+
     const data = this._getDataWithSelection(prevSelection, selection);
     const columns = this._getColumnsWithSelection(prevSelection, selection);
     const rowIndexData = this._getRowIndexDataWithSelection(selection);
@@ -215,10 +242,10 @@ class Sheet extends React.Component {
     this.setState({ selection, columns, rowIndexData, data });
   }
 
-  _setSelectionObject (obj) {
+  _setSelectionObject (obj, force) {
     const sel = {};
     _.assign(sel, this.state.selection, obj);
-    this._setSelectionPoint(sel.startRow, sel.endRow, sel.startCol, sel.endCol);
+    this._setSelectionPoint(sel.startRow, sel.endRow, sel.startCol, sel.endCol, force);
   }
 
   _rowGetter = (i) => {
@@ -251,12 +278,63 @@ class Sheet extends React.Component {
 
     this.setState({ editing: editing ? sel : null, data });
     if (!editing) {
-      this._focusBase();
+      setTimeout(this._focusBase, 0);
     }
   }
 
   _focusBase = () => {
     React.findDOMNode(this.refs.base).focus();
+  }
+
+  _dataToData (data) {
+    if (data) {
+      return data.map(d => { return new Immutable.Map({ data: d.get('data')}); });
+    } else {
+      return data;
+    }
+  }
+
+  _getSelectionFromChange (data, newData) {
+    let selection = {};
+
+    //  Check row
+    for (let i = 0; i <= newData.size; i++){
+      //  If start not found and row is different, it means startRow
+      if (selection.startRow === undefined && newData.get(i) &&
+          newData.get(i).get('data') !== data.get(i).get('data')) {
+        selection.startRow = i;
+      }
+
+      //  If start found and row is same, or row not found, it means ended
+      else if (selection.startRow !== undefined &&
+               (!newData.get(i) || newData.get(i).get('data') === data.get(i).get('data'))) {
+        selection.endRow = i - 1;
+        break;
+      }
+    }
+
+    //  Check column
+    for (let i = selection.startRow; i <= selection.endRow; i++) {
+
+      for (let j = 0; j <= this.state.columns.length; j++){
+        const dataKey = this.state.columns[j] ? this.state.columns[j].get('column').dataKey : null;
+
+        //  If start not found and col is different, it means startRow
+        if ((selection.startCol === undefined || selection.startCol > j) && newData.get(i) &&
+            newData.get(i).get('data').get(dataKey) !== data.get(i).get('data').get(dataKey)) {
+          selection.startCol = j;
+        }
+
+        //  If start found and col is same, or col not found, it means ended
+        else if (selection.startCol !== undefined && (selection.endCol === undefined || selection.endCol < j) &&
+                 (!newData.get(i) || newData.get(i).get('data').get(dataKey) === data.get(i).get('data').get(dataKey))) {
+          selection.endCol = j - 1;
+          break;
+        }
+      }
+    }
+
+    return selection;
   }
 
 
@@ -357,7 +435,7 @@ class Sheet extends React.Component {
       if (e.shiftKey){
         this._setSelectionPoint(sel.startRow, sel.startRow, sel.startCol - 1, sel.startCol - 1);
       } else {
-        this._setSelectionPoint(sel.startRow, sel.startRow,sel.startCol + 1,  sel.startCol + 1);
+        this._setSelectionPoint(sel.startRow, sel.startRow, sel.startCol + 1, sel.startCol + 1);
       }
     }
     else if (e.keyCode === 27 && editing){
@@ -366,14 +444,48 @@ class Sheet extends React.Component {
     else if (!editing && (e.keyCode === 8 || e.keyCode === 46)){
       this._handleDelete(e);
     }
+    else if (!editing && e.keyCode === 90 && ctrl){
+      if (e.shiftKey) {
+        this._handleRedo();
+      } else {
+        this._handleUndo();
+      }
+    }
     else if (!ignoreKeyCodes[e.keyCode] && !this.state.editing && !isCommand(e)){
       this._setEditing(true);
     }
-    //console.info(e.key, e.keyCode, e);
   }
 
   _handleDoubleClick = (e) => {
     this._setEditing(true);
+  }
+
+  _handleUndo = () => {
+    if (this.__historyIndex > 1){
+      this.__historyIndex--;
+      let data = this.__history[this.__historyIndex - 1];
+      data = this._dataToData(data);
+
+      const oldData = this.state.data;
+      this._setEditing(false, data);
+      setTimeout(() => {
+        this._setSelectionObject(this._getSelectionFromChange(oldData, data), true);
+      }, 0);
+    }
+  }
+
+  _handleRedo = () => {
+    if (this.__historyIndex < this.__history.length){
+      this.__historyIndex++;
+      let data = this.__history[this.__historyIndex - 1];
+      data = this._dataToData(data);
+
+      const oldData = this.state.data;
+      this._setEditing(false, data);
+      setTimeout(() => {
+        this._setSelectionObject(this._getSelectionFromChange(oldData, data), true);
+      }, 0);
+    }
   }
 
   _handleDelete = (e) => {
@@ -405,10 +517,15 @@ class Sheet extends React.Component {
 
     const data = [];
     const sel = this.state.selection;
-    for (let row = sel.startRow; row <= sel.endRow; row++){
+    const startRow = Math.min(sel.startRow, sel.endRow);
+    const endRow = Math.max(sel.startRow, sel.endRow);
+    for (let row = startRow; row <= endRow; row++){
       const rowDataRaw = [];
       const rowData = this.state.data.get(row).get('data');
-      for (let col = sel.startCol; col <= sel.endCol; col++){
+
+      const startCol = Math.min(sel.startCol, sel.endCol);
+      const endCol = Math.max(sel.startCol, sel.endCol);
+      for (let col = startCol; col <= endCol; col++){
         const dataKey = this.state.columns[col].get('column').dataKey;
         rowDataRaw.push(rowData.get(dataKey));
       }
@@ -436,16 +553,22 @@ class Sheet extends React.Component {
     const sel = this.state.selection;
     const isSingle = rows.length === 1 && rows[0] && rows[0].length === 1;
 
+    const startRow = Math.min(sel.startRow, sel.endRow);
+    const endRow = Math.max(sel.startRow, sel.endRow);
+    const startCol = Math.min(sel.startCol, sel.endCol);
+    const endCol = Math.max(sel.startCol, sel.endCol);
+
     //  If single cell
     if (isSingle){
-      for (let rowI = sel.startRow; rowI <= sel.endRow; rowI++){
+      for (let rowI = startRow; rowI <= endRow; rowI++){
         let row = data.get(rowI);
         let rowData = row.get('data');
-        for (let colI = sel.startCol; colI <= sel.endCol; colI++){
+        for (let colI = startCol; colI <= endCol; colI++){
           const dataKey = this.props.columns[colI].dataKey;
           rowData = rowData.set(dataKey, rows[0][0]);
         }
         row = row.set('data', rowData);
+        row = row.set('errors', this._validateRow(this.props.rowValidator, this.state.columns, row));
         data = data.set(rowI, row);
       }
     }
@@ -453,7 +576,7 @@ class Sheet extends React.Component {
     //  If not single cell
     else {
       rows.forEach((r, i) => {
-        i += sel.startRow;
+        i += startRow;
 
         //  Out of bound
         if (i >= this.props.rowCount){
@@ -463,7 +586,7 @@ class Sheet extends React.Component {
         let row = data.get(i);
         let rowData = row.get('data');
         r.forEach((value, j) => {
-          j += sel.startCol;
+          j += startCol;
 
           //  Out of bound
           if (j >= this.props.columns.length){
@@ -473,6 +596,7 @@ class Sheet extends React.Component {
           const dataKey = this.props.columns[j].dataKey;
           rowData = rowData.set(dataKey, value);
           row = row.set('data', rowData);
+          row = row.set('errors', this._validateRow(this.props.rowValidator, this.state.columns, row));
           data = data.set(i, row);
         });
       });
@@ -480,7 +604,7 @@ class Sheet extends React.Component {
 
     this.setState({ data });
     if (!isSingle) {
-      this._setSelectionPoint(sel.startRow, sel.startRow + rows.length - 1, sel.startCol, sel.startCol + rows[0].length - 1);
+      this._setSelectionPoint(startRow, startRow + rows.length - 1, startCol, startCol + rows[0].length - 1);
     }
 
   }
