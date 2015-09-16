@@ -61,11 +61,17 @@ class Sheet extends React.Component {
   componentWillMount () {
     window.addEventListener('mouseup', this._handleGlobalMouseUp);
     window.addEventListener('keydown', this._handleKeyDown);
+    window.addEventListener('paste', this._handlePaste);
+    window.addEventListener('copy', this._handleCopy);
+    window.addEventListener('cut', this._handleCut);
   }
 
   componentWillUnmount () {
     window.removeEventListener('mouseup', this._handleGlobalMouseUp);
     window.removeEventListener('keydown', this._handleKeyDown);
+    window.removeEventListener('paste', this._handlePaste);
+    window.removeEventListener('copy', this._handleCopy);
+    window.removeEventListener('cut', this._handleCut);
   }
 
   /**
@@ -189,7 +195,7 @@ class Sheet extends React.Component {
     }
   }
 
-  _setSelectionPoint = (startRow, startCol, endRow, endCol) => {
+  _setSelectionPoint = (startRow, endRow, startCol, endCol) => {
     const prevSelection = this.state.selection;
     const selection = {
       startRow: Math.max(Math.min(startRow, this.props.rowCount - 1), 0),
@@ -212,7 +218,7 @@ class Sheet extends React.Component {
   _setSelectionObject (obj) {
     const sel = {};
     _.assign(sel, this.state.selection, obj);
-    this._setSelectionPoint(sel.startRow, sel.startCol, sel.endRow, sel.endCol);
+    this._setSelectionPoint(sel.startRow, sel.endRow, sel.startCol, sel.endCol);
   }
 
   _rowGetter = (i) => {
@@ -279,7 +285,7 @@ class Sheet extends React.Component {
   }
 
   _handleSelectAll = () => {
-    this._setSelectionPoint(0, 0, Math.max(this.state.data.size, this.props.rowCount), this.state.columns.length);
+    this._setSelectionPoint(0, Math.max(this.state.data.size, this.props.rowCount), 0, this.state.columns.length);
   }
 
   _handleDataUpdate (rowIndex, dataKey, value){
@@ -315,7 +321,7 @@ class Sheet extends React.Component {
       if (e.shiftKey){
         this._setSelectionObject({ endRow: ctrl ? 0 : sel.endRow - 1 });
       } else {
-        this._setSelectionPoint(sel.startRow - 1, sel.startCol, sel.startRow - 1, sel.startCol);
+        this._setSelectionPoint(sel.startRow - 1, sel.startRow - 1, sel.startCol, sel.startCol);
       }
     }
     else if (e.keyCode === 40){
@@ -323,7 +329,7 @@ class Sheet extends React.Component {
       if (e.shiftKey){
         this._setSelectionObject({ endRow: ctrl ? this.props.rowCount : sel.endRow + 1 });
       } else {
-        this._setSelectionPoint(sel.startRow + 1, sel.startCol, sel.startRow + 1, sel.startCol);
+        this._setSelectionPoint(sel.startRow + 1, sel.startRow + 1, sel.startCol, sel.startCol);
       }
     }
     else if (e.keyCode === 37 && !editing){
@@ -331,7 +337,7 @@ class Sheet extends React.Component {
       if (e.shiftKey){
         this._setSelectionObject({ endCol: ctrl ? 0 : sel.endCol - 1 });
       } else {
-        this._setSelectionPoint(sel.startRow, sel.startCol - 1, sel.startRow, sel.startCol - 1);
+        this._setSelectionPoint(sel.startRow, sel.startRow, sel.startCol - 1, sel.startCol - 1);
       }
     }
     else if (e.keyCode === 39 && !editing){
@@ -339,19 +345,19 @@ class Sheet extends React.Component {
       if (e.shiftKey){
         this._setSelectionObject({ endCol: ctrl ? this.props.columns.length : sel.endCol + 1 });
       } else {
-        this._setSelectionPoint(sel.startRow, sel.startCol + 1, sel.startRow, sel.startCol + 1);
+        this._setSelectionPoint(sel.startRow, sel.startRow, sel.startCol + 1, sel.startCol + 1);
       }
     }
     else if (e.keyCode === 13){
       e.preventDefault();
-      this._setSelectionPoint(sel.startRow + 1, sel.startCol, sel.startRow + 1, sel.startCol);
+      this._setSelectionPoint(sel.startRow + 1, sel.startRow + 1, sel.startCol, sel.startCol);
     }
     else if (e.keyCode === 9){
       e.preventDefault();
       if (e.shiftKey){
-        this._setSelectionPoint(sel.startRow, sel.startCol - 1, sel.startRow, sel.startCol - 1);
+        this._setSelectionPoint(sel.startRow, sel.startRow, sel.startCol - 1, sel.startCol - 1);
       } else {
-        this._setSelectionPoint(sel.startRow, sel.startCol + 1, sel.startRow, sel.startCol + 1);
+        this._setSelectionPoint(sel.startRow, sel.startRow,sel.startCol + 1,  sel.startCol + 1);
       }
     }
     else if (e.keyCode === 27 && editing){
@@ -391,6 +397,93 @@ class Sheet extends React.Component {
     this.setState({ data });
   }
 
+  _handleCopy = (e) => {
+    if (!isInParent(document.activeElement, React.findDOMNode(this.refs.base)) ||
+        this.state.editing){
+      return;
+    }
+
+    const data = [];
+    const sel = this.state.selection;
+    for (let row = sel.startRow; row <= sel.endRow; row++){
+      const rowDataRaw = [];
+      const rowData = this.state.data.get(row).get('data');
+      for (let col = sel.startCol; col <= sel.endCol; col++){
+        const dataKey = this.state.columns[col].get('column').dataKey;
+        rowDataRaw.push(rowData.get(dataKey));
+      }
+      data.push(rowDataRaw.join('\t'));
+    }
+
+    e.clipboardData.setData('text/plain', data.join('\n'));
+    e.preventDefault();
+  }
+
+  _handlePaste = (e) => {
+    if (!isInParent(document.activeElement, React.findDOMNode(this.refs.base)) ||
+        this.state.editing){
+      return;
+    }
+
+    e.preventDefault();
+    const text = (e.originalEvent || e).clipboardData.getData('text/plain');
+    let rows = text.split(/[\n\r]+/);
+    rows = rows.map(row => {
+      return row.split('\t');
+    });
+
+    let data = this.state.data;
+    const sel = this.state.selection;
+    const isSingle = rows.length === 1 && rows[0] && rows[0].length === 1;
+
+    //  If single cell
+    if (isSingle){
+      for (let rowI = sel.startRow; rowI <= sel.endRow; rowI++){
+        let row = data.get(rowI);
+        let rowData = row.get('data');
+        for (let colI = sel.startCol; colI <= sel.endCol; colI++){
+          const dataKey = this.props.columns[colI].dataKey;
+          rowData = rowData.set(dataKey, rows[0][0]);
+        }
+        row = row.set('data', rowData);
+        data = data.set(rowI, row);
+      }
+    }
+
+    //  If not single cell
+    else {
+      rows.forEach((r, i) => {
+        i += sel.startRow;
+
+        //  Out of bound
+        if (i >= this.props.rowCount){
+          return;
+        }
+
+        let row = data.get(i);
+        let rowData = row.get('data');
+        r.forEach((value, j) => {
+          j += sel.startCol;
+
+          //  Out of bound
+          if (j >= this.props.columns.length){
+            return;
+          }
+
+          const dataKey = this.props.columns[j].dataKey;
+          rowData = rowData.set(dataKey, value);
+          row = row.set('data', rowData);
+          data = data.set(i, row);
+        });
+      });
+    }
+
+    this.setState({ data });
+    if (!isSingle) {
+      this._setSelectionPoint(sel.startRow, sel.startRow + rows.length - 1, sel.startCol, sel.startCol + rows[0].length - 1);
+    }
+
+  }
 
 
   /**
