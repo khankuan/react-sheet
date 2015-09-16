@@ -484,9 +484,6 @@ class Sheet extends React.Component {
       if (isFirefox() || isSafari()) {
         //  Force a selection so firefox will trigger onpaste
         React.findDOMNode(this.refs.dummy).focus();
-        setTimeout(() => {
-          React.findDOMNode(this.refs.dummy).blur();
-        });
       }
     }
     else if (!ignoreKeyCodes[e.keyCode] && !this.state.editing && !isCommand(e)){
@@ -826,7 +823,6 @@ class Sheet extends React.Component {
           </Table>
         </Autosize>
         <input
-          id='dummy'
           ref='dummy'
           type='text'
           style={{width: '0px'}} />
