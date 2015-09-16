@@ -288,7 +288,7 @@ class Sheet extends React.Component {
 
   _dataToData (data) {
     if (data) {
-      return data.map(d => { return new Immutable.Map({ data: d.get('data')}); });
+      return data.map(d => { return new Immutable.Map({ data: d.get('data'), errors: d.get('errors')}); });
     } else {
       return data;
     }
@@ -348,8 +348,15 @@ class Sheet extends React.Component {
   }
 
   _handleGlobalMouseDown = (type, selection, e) => {
-    this.__dragging[type] = true;
-    this._setSelectionObject(selection);
+    if (this.state.editing) {
+      setTimeout(() => {
+        this.__dragging[type] = true;
+        this._setSelectionObject(selection);
+      }, 0);
+    } else {
+      this.__dragging[type] = true;
+      this._setSelectionObject(selection);
+    }
   }
 
   _handleGlobalMouseOver = (type, selection) => {
