@@ -589,7 +589,7 @@ class Sheet extends React.Component {
     e.preventDefault();
     const text = (e.originalEvent || e).clipboardData.getData('text/plain');
 
-    let rows = text.split('\n');
+    let rows = text.replace(/\r/g, '\n').split('\n');
     rows = rows.map(row => {
       return row.split('\t');
     });
