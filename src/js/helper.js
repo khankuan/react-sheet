@@ -50,3 +50,12 @@ export function isCommand (e) {
   return (e.metaKey || e.ctrlKey) && (e.keyCode === 67 || e.keyCode === 86 || e.keyCode === 88) ||
           (e.keyCode === 8 || e.keyCode === 46);
 }
+
+
+export function isFirefox (e) {
+  return navigator.userAgent.search('Firefox') > -1;
+}
+
+export function isSafari (e) {
+  return navigator.userAgent.search('Safari') > -1 && navigator.userAgent.search('Chrome') === -1;
+}

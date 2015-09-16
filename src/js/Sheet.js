@@ -16,7 +16,7 @@ import ColumnHeader from './ColumnHeader';
 import Cell from './Cell';
 import validator from './Validator';
 
-import { inBetween, inBetweenArea, isInParent, ignoreKeyCodes, isCommand } from './helper';
+import { inBetween, inBetweenArea, isInParent, ignoreKeyCodes, isCommand, isFirefox, isSafari } from './helper';
 
 @Radium
 class Sheet extends React.Component {
@@ -68,6 +68,7 @@ class Sheet extends React.Component {
     window.addEventListener('paste', this._handlePaste);
     window.addEventListener('copy', this._handleCopy);
     window.addEventListener('cut', this._handleCut);
+    window.addEventListener('beforecopy', this._preventDefault);
   }
 
   componentWillUnmount () {
@@ -76,6 +77,7 @@ class Sheet extends React.Component {
     window.removeEventListener('paste', this._handlePaste);
     window.removeEventListener('copy', this._handleCopy);
     window.removeEventListener('cut', this._handleCut);
+    window.removeEventListener('beforecopy', this._preventDefault);
   }
 
   componentDidUpdate (prevProps, prevState) {
@@ -283,7 +285,7 @@ class Sheet extends React.Component {
   }
 
   _focusBase = () => {
-    React.findDOMNode(this.refs.base).focus();
+    React.findDOMNode(this.refs.dummy).focus();
   }
 
   _dataToData (data) {
@@ -341,6 +343,10 @@ class Sheet extends React.Component {
   /**
    * Handlers
    */
+  _preventDefault = (e) => {
+    e.preventDefault();
+  }
+
   _handleResizeColumn = (newColumnWidth, key) => {
     const columnWidthOverrides = {...this.state.columnWidthOverrides};
     columnWidthOverrides[key] = newColumnWidth;
@@ -352,10 +358,12 @@ class Sheet extends React.Component {
       setTimeout(() => {
         this.__dragging[type] = true;
         this._setSelectionObject(selection);
+        this._focusBase();
       }, 0);
     } else {
       this.__dragging[type] = true;
       this._setSelectionObject(selection);
+      this._focusBase();
     }
   }
 
@@ -459,23 +467,27 @@ class Sheet extends React.Component {
       }
     }
     else if (ctrl && e.keyCode === 67 && !editing){
-      //  Force a selection so firefox will trigger oncopy
-      const selection = document.getSelection();
-      const range = document.createRange();
-      range.setStartBefore(React.findDOMNode(this.refs.dummy));
-      range.setEndAfter(React.findDOMNode(this.refs.dummy));
-      selection.addRange(range);
-      setTimeout(() => {
-        selection.removeAllRanges();
-      });
+      if (isFirefox()){
+        //  Force a selection so firefox will trigger oncopy
+        const selection = document.getSelection();
+        const range = document.createRange();
+        range.setStartBefore(React.findDOMNode(this.refs.dummy));
+        range.setEndAfter(React.findDOMNode(this.refs.dummy));
+        selection.addRange(range);
+        setTimeout(() => {
+          selection.removeAllRanges();
+        });
+      }
     }
 
     else if (ctrl && e.keyCode === 86 && !editing){
-      //  Force a selection so firefox will trigger onpaste
-      React.findDOMNode(this.refs.dummy).focus();
-      setTimeout(() => {
-        React.findDOMNode(this.refs.dummy).blur();
-      });
+      if (isFirefox() || isSafari()) {
+        //  Force a selection so firefox will trigger onpaste
+        React.findDOMNode(this.refs.dummy).focus();
+        setTimeout(() => {
+          React.findDOMNode(this.refs.dummy).blur();
+        });
+      }
     }
     else if (!ignoreKeyCodes[e.keyCode] && !this.state.editing && !isCommand(e)){
       this._setEditing(true);
@@ -799,7 +811,7 @@ class Sheet extends React.Component {
           Styles.FullSize,
           Styles.Sheet.base
         ] }
-        tabIndex='0' >
+        tabIndex='0'>
         <Autosize>
           <Table
             rowsCount={ this.state.data.size }
@@ -814,6 +826,7 @@ class Sheet extends React.Component {
           </Table>
         </Autosize>
         <input
+          id='dummy'
           ref='dummy'
           type='text'
           style={{width: '0px'}} />
