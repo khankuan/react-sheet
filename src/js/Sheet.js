@@ -285,7 +285,7 @@ class Sheet extends React.Component {
   }
 
   _focusBase = () => {
-    React.findDOMNode(this.refs.dummy).focus();
+    React.findDOMNode(this.refs.dummy).select();
   }
 
   _dataToData (data) {
@@ -465,6 +465,7 @@ class Sheet extends React.Component {
       } else {
         this._handleUndo();
       }
+      e.preventDefault();
     }
     else if (ctrl && e.keyCode === 67 && !editing){
       if (isFirefox()){
@@ -479,15 +480,23 @@ class Sheet extends React.Component {
         });
       }
     }
-
     else if (ctrl && e.keyCode === 86 && !editing){
-      if (isFirefox() || isSafari()) {
+      if (isFirefox()) {
         //  Force a selection so firefox will trigger onpaste
-        React.findDOMNode(this.refs.dummy).focus();
+        this._focusBase();
       }
+    }
+    else if (ctrl && e.keyCode === 65) {
+      this._handleSelectAll();
     }
     else if (!ignoreKeyCodes[e.keyCode] && !this.state.editing && !isCommand(e)){
       this._setEditing(true);
+    }
+    else if (ctrl && !isCommand(e)) {
+      //  To focus on input for safari paste event
+      if (isSafari()) {
+        this._focusBase();
+      }
     }
   }
 
@@ -579,7 +588,8 @@ class Sheet extends React.Component {
 
     e.preventDefault();
     const text = (e.originalEvent || e).clipboardData.getData('text/plain');
-    let rows = text.split(/[\n\r]+/);
+
+    let rows = text.split('\n');
     rows = rows.map(row => {
       return row.split('\t');
     });
@@ -825,7 +835,8 @@ class Sheet extends React.Component {
         <input
           ref='dummy'
           type='text'
-          style={{width: '0px'}} />
+          style={{width: '0px'}}
+          onFocus={ this._preventDefault } />
       </div>
     );
   }
