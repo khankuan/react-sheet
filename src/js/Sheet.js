@@ -285,6 +285,10 @@ class Sheet extends React.Component {
   }
 
   _focusBase = () => {
+    React.findDOMNode(this.refs.base).focus();
+  }
+
+  _focusDummy = () => {
     React.findDOMNode(this.refs.dummy).select();
   }
 
@@ -358,12 +362,12 @@ class Sheet extends React.Component {
       setTimeout(() => {
         this.__dragging[type] = true;
         this._setSelectionObject(selection);
-        this._focusBase();
+        //this._focusBase();
       }, 0);
     } else {
       this.__dragging[type] = true;
       this._setSelectionObject(selection);
-      this._focusBase();
+      //this._focusBase();
     }
   }
 
@@ -469,6 +473,7 @@ class Sheet extends React.Component {
     }
     else if (ctrl && e.keyCode === 67 && !editing){
       if (isFirefox()){
+        this._focusBase();
         //  Force a selection so firefox will trigger oncopy
         const selection = document.getSelection();
         const range = document.createRange();
@@ -483,7 +488,7 @@ class Sheet extends React.Component {
     else if (ctrl && e.keyCode === 86 && !editing){
       if (isFirefox()) {
         //  Force a selection so firefox will trigger onpaste
-        this._focusBase();
+        this._focusDummy();
       }
     }
     else if (ctrl && e.keyCode === 65) {
@@ -553,7 +558,7 @@ class Sheet extends React.Component {
     this.setState({ data });
   }
 
-  _handleCopy = (e) => {
+  _handleCopy = (e) => {console.log(e)
     if (!isInParent(document.activeElement, React.findDOMNode(this.refs.base)) ||
         this.state.editing){
       return;
@@ -587,7 +592,11 @@ class Sheet extends React.Component {
     }
 
     e.preventDefault();
-    const text = (e.originalEvent || e).clipboardData.getData('text/plain');
+    let text = (e.originalEvent || e).clipboardData.getData('text/plain');
+
+    if (text.charCodeAt(text.length - 1) === 65279){
+      text = text.substring(0, text.length - 1);
+    }
 
     let rows = text.replace(/\r/g, '\n').split('\n');
     rows = rows.map(row => {
@@ -610,7 +619,11 @@ class Sheet extends React.Component {
         let rowData = row.get('data');
         for (let colI = startCol; colI <= endCol; colI++){
           const dataKey = this.props.columns[colI].dataKey;
-          rowData = rowData.set(dataKey, rows[0][0]);
+          if (rows[0][0]){
+            rowData = rowData.set(dataKey, rows[0][0]);
+          } else {
+            rowData = rowData.delete(dataKey);
+          }
         }
         row = row.set('data', rowData);
         row = row.set('errors', this._validateRow(this.props.rowValidator, this.state.columns, row));
@@ -639,7 +652,11 @@ class Sheet extends React.Component {
           }
 
           const dataKey = this.props.columns[j].dataKey;
-          rowData = rowData.set(dataKey, value);
+          if (value) {
+            rowData = rowData.set(dataKey, value);
+          } else {
+            rowData = rowData.delete(dataKey);
+          }
           row = row.set('data', rowData);
           row = row.set('errors', this._validateRow(this.props.rowValidator, this.state.columns, row));
           data = data.set(i, row);

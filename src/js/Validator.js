@@ -5,6 +5,7 @@ export default function (rowData, data, required, options, custom){
     return null;
   }
 
+
   //  Custom
   if (custom){
     return custom(data);

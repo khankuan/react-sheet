@@ -90,6 +90,10 @@ class Cell extends React.Component {
     e.preventDefault();
   }
 
+  _stopPropagation = (e) => {
+    e.stopPropagation();
+  }
+
   _handleBlur = (e) => {
     if (this.props.editing) {
       this._commitEdit();
