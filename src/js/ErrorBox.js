@@ -19,8 +19,8 @@ class ErrorBox extends React.Component {
   _getStyle () {
     let styles = [Styles.ErrorBox.base];
 
-    if (this.props.getCellErrorStyle) {
-      styles = this.props.getCellErrorStyle(this.props.errors, styles);
+    if (this.props.getStyle) {
+      styles = this.props.getStyle(this.props.errors, styles);
     }
 
     return styles;
@@ -38,7 +38,7 @@ class ErrorBox extends React.Component {
 
 ErrorBox.propTypes = {
   errors: React.PropTypes.array.isRequired,
-  getCellErrorStyle: React.PropTypes.func
+  getStyle: React.PropTypes.func
 };
 
 export default ErrorBox;
