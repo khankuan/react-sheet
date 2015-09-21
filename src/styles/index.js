@@ -7,6 +7,7 @@ import Cell from './Cell';
 import Sheet from './Sheet';
 import AutoPosition from './AutoPosition';
 import ErrorBox from './ErrorBox';
+import Menu from './Menu';
 
 export default {
   FullSize,
@@ -17,5 +18,6 @@ export default {
   Cell,
   Sheet,
   AutoPosition,
-  ErrorBox
+  ErrorBox,
+  Menu
 };

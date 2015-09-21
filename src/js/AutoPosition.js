@@ -23,14 +23,14 @@ class AutoPosition extends React.Component {
 
     const anchorBox = this.props.anchorBox;
     const parentBox = this.state.parentBox;
-    let left = anchorBox.left - parentBox.left + anchorBox.width;
+    let left = anchorBox.left - parentBox.left + (anchorBox.width || 0);
     let top = anchorBox.top - parentBox.top;
 
     if (left + childBox.width > parentBox.width) {
-      left = left - childBox.width - anchorBox.width;
+      left = left - childBox.width - (anchorBox.width || 0);
     }
     if (top + childBox.height > parentBox.height) {
-      top = top - childBox.height + anchorBox.height;
+      top = top - childBox.height + (anchorBox.height || 0);
     }
 
     const style = { ...Styles.AutoPosition.child };

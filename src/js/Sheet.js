@@ -17,6 +17,7 @@ import Cell from './Cell';
 import validator from './Validator';
 import AutoPosition from './AutoPosition';
 import ErrorBox from './ErrorBox';
+import Menu from './Menu';
 
 import { inBetween, inBetweenArea, isInParent, ignoreKeyCodes, isCommand, isFirefox, isSafari } from './helper';
 
@@ -72,6 +73,7 @@ class Sheet extends React.Component {
     window.addEventListener('copy', this._handleCopy);
     window.addEventListener('cut', this._handleCut);
     window.addEventListener('beforecopy', this._preventDefault);
+    window.addEventListener('click', this._handleBaseClick);
   }
 
   componentWillUnmount () {
@@ -81,6 +83,7 @@ class Sheet extends React.Component {
     window.removeEventListener('copy', this._handleCopy);
     window.removeEventListener('cut', this._handleCut);
     window.removeEventListener('beforecopy', this._preventDefault);
+    window.removeEventListener('click', this._handleBaseClick);
   }
 
   componentDidUpdate (prevProps, prevState) {
@@ -700,6 +703,67 @@ class Sheet extends React.Component {
     }
   }
 
+  _handleColumnContextMenu (column, e) {
+    e.preventDefault();
+    this.setState({
+      columnMenu: {
+        column,
+        position: {left: e.clientX, top: e.clientY}
+      }
+    });
+  }
+
+  _handleRowContextMenu (row, e) {
+    this.setState({ rowMenu: {row, e} });
+  }
+
+  _handleSelectionContextMenu (selection, e) {
+    this.setState({ selectionMenu: {selection, e} });
+  }
+
+  _handleBaseClick = (e) => {
+    setTimeout(() => {
+      //  Reset menus
+      if (this.state.columnMenu){
+        this.setState({ columnMenu: null });
+      }
+      if (this.state.rowMenu){
+        this.setState({ rowMenu: null });
+      }
+      if (this.state.selectionMenu){
+        this.setState({ selectionMenu: null });
+      }
+    }, 0);
+  }
+
+  _handleSort = (direction) => {
+
+    const column = this.state.columnMenu.column;
+    const dataKey = column.get('column').dataKey;
+
+    let data = this.state.data;
+    data = data.sort((a, b) => {
+      const dataA = a.get('data').get(dataKey);
+      const dataB = b.get('data').get(dataKey);
+
+      if (!dataA && !dataB) {
+        return b.get('data').size - a.get('data').size;
+      }
+
+      if (!dataA) {
+        return 1;
+      }
+
+      if (!dataB) {
+        return -1;
+      }
+
+      return dataB > dataA ? -direction : direction;
+    });
+
+    this.setState({ data });
+  }
+
 
   /**
    * Rendering
@@ -751,7 +815,8 @@ class Sheet extends React.Component {
         }) }
         onMouseEnter={ this._handleGlobalMouseOver.bind(this, 'column', {
           endCol: column.get('__index')
-        }) } />
+        }) }
+        onContextMenu={ this._handleColumnContextMenu.bind(this, column) } />
     );
   }
 
@@ -873,6 +938,25 @@ class Sheet extends React.Component {
     );
   }
 
+  _getColumnMenu () {
+    if (!this.state.columnMenu) {
+      return;
+    }
+
+    const columnMenu = this.state.columnMenu;
+
+    return (
+      <AutoPosition
+        anchorBox={ {left: columnMenu.position.left, top: columnMenu.position.top} } >
+        <Menu items={[
+            {label: 'Sort Asc', onClick: this._handleSort.bind(this, 1) },
+            {label: 'Sort Desc', onClick: this._handleSort.bind(this, -1) },
+            {label: 'Clear', onClick: this._handleDelete }
+          ]} />
+      </AutoPosition>
+    );
+  }
+
   render () {
     return (
       <div
@@ -902,6 +986,7 @@ class Sheet extends React.Component {
           onFocus={ this._preventDefault } />
 
         { this._getErrorPopover() }
+        { this._getColumnMenu() }
 
       </div>
     );

@@ -15,7 +15,7 @@ var columns = [
 
 function init () {
   var element = ReactSheetFactory({
-    defaultData: [{name: 'John', jobTitle: 'bos'}, {email: 'sam', salary: 500}],
+    defaultData: [{name: 'John', jobTitle: 'bos'}, {name: 'Zebra', email: 'sam', salary: 500}, {name: 'Ali'}],
     rowCount: 20,
     columns: columns
   });
