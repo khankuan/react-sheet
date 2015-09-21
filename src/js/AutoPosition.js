@@ -26,6 +26,13 @@ class AutoPosition extends React.Component {
     let left = anchorBox.left - parentBox.left + anchorBox.width;
     let top = anchorBox.top - parentBox.top;
 
+    if (left + childBox.width > parentBox.width) {
+      left = left - childBox.width - anchorBox.width;
+    }
+    if (top + childBox.height > parentBox.height) {
+      top = top - childBox.height + anchorBox.height;
+    }
+
     return {
       position: 'absolute',
       left,
@@ -42,7 +49,6 @@ class AutoPosition extends React.Component {
   }
 
   componentDidMount () {
-    window.x = React.findDOMNode(this.refs.child);
     const childBox = React.findDOMNode(this.refs.child).getBoundingClientRect();
     const parentBox = React.findDOMNode(this.refs.base).getBoundingClientRect();
     this.setState({ childBox, parentBox });
