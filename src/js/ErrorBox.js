@@ -20,7 +20,7 @@ class ErrorBox extends React.Component {
     let styles = [Styles.ErrorBox.base];
 
     if (this.props.getCellErrorStyle) {
-      style = this.props.getCellErrorStyle(this.props.errors, style);
+      styles = this.props.getCellErrorStyle(this.props.errors, styles);
     }
 
     return styles;
