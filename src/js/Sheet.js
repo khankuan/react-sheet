@@ -15,6 +15,8 @@ import RowIndex from './RowIndex';
 import ColumnHeader from './ColumnHeader';
 import Cell from './Cell';
 import validator from './Validator';
+import AutoPosition from './AutoPosition';
+import ErrorBox from './ErrorBox';
 
 import { inBetween, inBetweenArea, isInParent, ignoreKeyCodes, isCommand, isFirefox, isSafari } from './helper';
 
@@ -32,7 +34,8 @@ class Sheet extends React.Component {
       columnWidthOverrides: {},
       columns,
       data: this._getInitialData(props, columns),
-      selection: {}
+      selection: {},
+      showError: null
     };
 
     this.__dragging = {};
@@ -156,7 +159,7 @@ class Sheet extends React.Component {
       column = column.get('column');
       const error = validator(rowData, rowData.get(column.dataKey), column.required, column.options, column.validator);
       if (error) {
-        errors[column.dataKey] = error;
+        errors[column.dataKey] = (column.label || column.dataKey) + ': ' + error;
       }
     });
 
@@ -558,7 +561,7 @@ class Sheet extends React.Component {
     this.setState({ data });
   }
 
-  _handleCopy = (e) => {console.log(e)
+  _handleCopy = (e) => {
     if (!isInParent(document.activeElement, React.findDOMNode(this.refs.base)) ||
         this.state.editing){
       return;
@@ -668,7 +671,23 @@ class Sheet extends React.Component {
     if (!isSingle) {
       this._setSelectionPoint(startRow, startRow + rows.length - 1, startCol, startCol + rows[0].length - 1);
     }
+  }
 
+  _handleCellMouseEnter = (error, e) => {
+    const cell = e.target.tagName === 'div' ? e.target : e.target.parentNode.parentNode;
+
+    this.setState({
+      showError: {
+        errors: [error],
+        boundingBox: cell.getBoundingClientRect()
+      }
+    });
+  }
+
+  _handleCellMouseLeave = () => {
+    if (this.state.showError) {
+      this.setState({ showError: null });
+    }
   }
 
 
@@ -782,6 +801,8 @@ class Sheet extends React.Component {
           endRow: rowIndex,
           endCol: column.get('__index')
         }) }
+        onMouseEnter={ errors[cellKey] ? this._handleCellMouseEnter.bind(this, errors[cellKey]) : null }
+        onMouseLeave={ this._handleCellMouseLeave }
         onDoubleClick={this._handleDoubleClick} />
     );
   }
@@ -827,6 +848,20 @@ class Sheet extends React.Component {
     return columns;
   }
 
+  _getErrorPopover () {
+    const showError = this.state.showError;
+    if (!showError) {
+      return;
+    }
+
+    return (
+      <AutoPosition
+        anchorBox={ showError.boundingBox } >
+        <ErrorBox errors={ showError.errors } />
+      </AutoPosition>
+    );
+  }
+
   render () {
     return (
       <div
@@ -852,8 +887,11 @@ class Sheet extends React.Component {
         <input
           ref='dummy'
           type='text'
-          style={{width: '0px'}}
+          style={{display: 'none'}}
           onFocus={ this._preventDefault } />
+
+        { this._getErrorPopover() }
+
       </div>
     );
   }

@@ -237,6 +237,8 @@ class Cell extends React.Component {
         onDrag={ this._preventDefault }
         onMouseDown={ this.props.onMouseDown }
         onMouseOver={ this.props.onMouseOver }
+        onMouseEnter = { this.props.onMouseEnter }
+        onMouseLeave = { this.props.onMouseLeave }
         onDoubleClick={ this.props.onDoubleClick } >
         <input
           ref='input'
@@ -283,6 +285,8 @@ Cell.propTypes = {
 
   onMouseDown: React.PropTypes.func,
   onMouseOver: React.PropTypes.func,
+  onMouseEnter: React.PropTypes.func,
+  onMouseLeave: React.PropTypes.func,
   onDoubleClick: React.PropTypes.func
 };
 

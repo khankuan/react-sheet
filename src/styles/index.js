@@ -5,6 +5,8 @@ import Colors from './Colors';
 import Header from './Header';
 import Cell from './Cell';
 import Sheet from './Sheet';
+import AutoPosition from './AutoPosition';
+import ErrorBox from './ErrorBox';
 
 export default {
   FullSize,
@@ -13,5 +15,7 @@ export default {
   Colors,
   Header,
   Cell,
-  Sheet
+  Sheet,
+  AutoPosition,
+  ErrorBox
 };
