@@ -17,7 +17,7 @@ class AutoPosition extends React.Component {
     if (!childBox) {
       return {
         position: 'absolute',
-        left: -1000000
+        opacity: 0
       };
     }
 
@@ -33,11 +33,11 @@ class AutoPosition extends React.Component {
       top = top - childBox.height + anchorBox.height;
     }
 
-    return {
-      position: 'absolute',
-      left,
-      top
-    };
+    const style = { ...Styles.AutoPosition.child };
+    style.left = left;
+    style.top = top;
+
+    return style;
   }
 
   _getChildren () {

@@ -374,6 +374,16 @@ class Sheet extends React.Component {
     }
   }
 
+  _handleRowIndexMouseOver = (type, selection, errors, e) => {
+    const errorsArr = [];
+    for (let key in errors) {
+      errorsArr.push(errors[key]);
+    }
+
+    this._handleCellMouseEnter(errorsArr, e);
+    this._handleGlobalMouseOver(type, selection);
+  }
+
   _handleGlobalMouseOver = (type, selection) => {
     if (this.__dragging[type] && !this.state.editing) {
       this._setSelectionObject(selection);
@@ -673,12 +683,12 @@ class Sheet extends React.Component {
     }
   }
 
-  _handleCellMouseEnter = (error, e) => {
+  _handleCellMouseEnter = (errors, e) => {
     const cell = e.target.tagName === 'div' ? e.target : e.target.parentNode.parentNode;
 
     this.setState({
       showError: {
-        errors: [error],
+        errors: Array.isArray(errors) ? errors : [errors],
         boundingBox: cell.getBoundingClientRect()
       }
     });
@@ -720,9 +730,10 @@ class Sheet extends React.Component {
           startCol: 0,
           endCol: this.state.columns.length
         }) }
-        onMouseEnter={ this._handleGlobalMouseOver.bind(this, 'row', {
+        onMouseEnter={ this._handleRowIndexMouseOver.bind(this, 'row', {
           endRow: rowIndex
-        }) } />
+        }, row.get('errors')) }
+        onMouseLeave={ this._handleCellMouseLeave } />
     );
   }
 
@@ -857,7 +868,7 @@ class Sheet extends React.Component {
     return (
       <AutoPosition
         anchorBox={ showError.boundingBox } >
-        <ErrorBox errors={ showError.errors } />
+        <ErrorBox errors={ showError.errors } getStyle={ this.props.getCellErrorStyle }/>
       </AutoPosition>
     );
   }

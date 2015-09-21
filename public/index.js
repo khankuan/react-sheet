@@ -9,7 +9,7 @@ var columns = [
       return re.test(value);
     } 
   },
-  { label: 'Salary', dataKey: 'salary', formatter: function(value){ return value ? '$' + value : value; }, validator: function(value){ return !(parseInt(value) >= 0); }}
+  { label: 'Salary', dataKey: 'salary', formatter: function(value){ return value ? '$' + value : value; }, validator: function(value){ return (parseInt(value) >= 0) ? 'Must be postiive' : null }}
 ];
 
 

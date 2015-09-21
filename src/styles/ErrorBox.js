@@ -3,7 +3,7 @@ import Colors from './Colors';
 export default {
   base: {
     background: 'white',
-    padding: '1px 12px 12px 12px',
+    padding: '1px 12px',
     fontWeight: 500,
     minWidth: '160px',
     maxWidth: '280px',
