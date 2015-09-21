@@ -905,6 +905,7 @@ Sheet.propTypes = {
   getCellStyle: React.PropTypes.func,
   getRowHeaderStyle: React.PropTypes.func,
   getColumnHeaderStyle: React.PropTypes.func,
+  getCellErrorStyle: React.PropTypes.func,
   rowHeight: React.PropTypes.number
 };
 

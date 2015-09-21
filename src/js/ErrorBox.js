@@ -1,6 +1,8 @@
 import React from 'react';
 import Styles from '../styles';
+import Radium from 'radium';
 
+@Radium
 class ErrorBox extends React.Component {
 
   _getErrors () {
@@ -14,9 +16,19 @@ class ErrorBox extends React.Component {
     });
   }
 
+  _getStyle () {
+    let styles = [Styles.ErrorBox.base];
+
+    if (this.props.getCellErrorStyle) {
+      style = this.props.getCellErrorStyle(this.props.errors, style);
+    }
+
+    return styles;
+  }
+
   render () {
     return (
-      <div style={Styles.ErrorBox.base}>
+      <div style={ this._getStyle() }>
         { this._getErrors() }
       </div>
     );
@@ -25,7 +37,8 @@ class ErrorBox extends React.Component {
 }
 
 ErrorBox.propTypes = {
-  errors: React.PropTypes.array.isRequired
+  errors: React.PropTypes.array.isRequired,
+  getCellErrorStyle: React.PropTypes.func
 };
 
 export default ErrorBox;
