@@ -36,6 +36,7 @@ class Sheet extends React.Component {
       columns,
       data: this._getInitialData(props, columns),
       selection: {},
+      copySelection: {},
       showError: null
     };
 
@@ -177,9 +178,11 @@ class Sheet extends React.Component {
     return Object.keys(errors).length > 0 ? errors : null;
   }
 
-  _getDataWithSelection (prevSel, sel) {
-    const data = this.state.data;
+  _getCurrentDataWithSelection (prevSel, sel, type='selection'){
+    return this._getDataWithSelection(this.state.data, prevSel, sel, type);
+  }
 
+  _getDataWithSelection (data, prevSel, sel, type='selection') {
     return data.withMutations(d => {
 
       const doneMap = {}; //  cache for intersection
@@ -194,7 +197,7 @@ class Sheet extends React.Component {
             continue;
           }
 
-          const curData = d.get(i).set('selection', sel);
+          const curData = d.get(i).set(type, sel);
           if (curData !== d.get(i)) {
             d.set(i, curData);
           }
@@ -243,7 +246,7 @@ class Sheet extends React.Component {
       return;
     }
 
-    const data = this._getDataWithSelection(prevSelection, selection);
+    const data = this._getCurrentDataWithSelection(prevSelection, selection);
     const columns = this._getColumnsWithSelection(prevSelection, selection);
     const rowIndexData = this._getRowIndexDataWithSelection(selection);
 
@@ -256,6 +259,30 @@ class Sheet extends React.Component {
     this._setSelectionPoint(sel.startRow, sel.endRow, sel.startCol, sel.endCol, force);
   }
 
+  _setCopySelectionPoint = (startRow, endRow, startCol, endCol) => {
+    const prevCopySelection = this.state.copySelection;
+    const copySelection = {
+      startRow: Math.min(startRow, endRow),
+      endRow: Math.max(startRow, endRow),
+      startCol: Math.min(startCol, endCol),
+      endCol: Math.max(startCol, endCol)
+    };
+
+    if (_.isEqual(copySelection, this.state.copySelection)){
+      return;
+    }
+
+    const data = this._getCurrentDataWithSelection(prevCopySelection, copySelection, 'copySelection');
+
+    this.setState({ copySelection, data });
+  }
+
+  _setCopySelectionObject (obj) {
+    const sel = {};
+    _.assign(sel, this.state.copySelection, obj);
+    this._setCopySelectionPoint(sel.startRow, sel.endRow, sel.startCol, sel.endCol);
+  }
+
   _rowGetter = (i) => {
     return this.state.data.get(i);
   }
@@ -265,29 +292,32 @@ class Sheet extends React.Component {
   }
 
   _setEditing = (editing, data) => {
-    const sel = this.state.selection;
-    if (editing !== !!this.state.editing){
-      data = data || this.state.data;
+    return new Promise((resolve, reject) => {
+      const sel = this.state.selection;
+      if (editing !== !!this.state.editing){
+        data = data || this.state.data;
 
-      const prevSel = this.state.editing;
-      if (prevSel) {
-        const prevEditingRow = data.get(prevSel.startRow).delete('editing');
-        data = data.set(prevSel.startRow, prevEditingRow);
+        const prevSel = this.state.editing;
+        if (prevSel) {
+          const prevEditingRow = data.get(prevSel.startRow).delete('editing');
+          data = data.set(prevSel.startRow, prevEditingRow);
+        }
+
+        let row = data.get(sel.startRow);
+        if (editing) {
+          row = row.set('editing', sel.startCol);
+        } else {
+          row = row.delete('editing');
+        }
+        data = data.set(sel.startRow, row);
       }
 
-      let row = data.get(sel.startRow);
-      if (editing) {
-        row = row.set('editing', sel.startCol);
-      } else {
-        row = row.delete('editing');
-      }
-      data = data.set(sel.startRow, row);
-    }
+      this.setState({ editing: editing ? sel : null, data }, resolve);
 
-    this.setState({ editing: editing ? sel : null, data });
-    if (!editing) {
-      setTimeout(this._focusBase, 0);
-    }
+      if (!editing) {
+        setTimeout(this._focusBase, 0);
+      }
+    });
   }
 
   _focusBase = () => {
@@ -416,7 +446,9 @@ class Sheet extends React.Component {
     row = row.set('errors', this._validateRow(this.props.rowValidator, this.state.columns, row));
 
     data = data.set(rowIndex, row);
-    this._setEditing(false, data);
+    this._setEditing(false, data).then(() => {
+      this._setCopySelectionPoint(-1, -1, -1, -1);
+    });
   }
 
   _handleKeyDown = (e) => {
@@ -476,6 +508,9 @@ class Sheet extends React.Component {
     else if (e.keyCode === 27 && editing){
       this._setEditing(false);
     }
+    else if (e.keyCode === 27 && !editing){
+       this._setCopySelectionPoint(-1, -1, -1, -1);
+    }
     else if (!editing && (e.keyCode === 8 || e.keyCode === 46)){
       this._handleDelete(e);
     }
@@ -532,10 +567,9 @@ class Sheet extends React.Component {
       data = this._dataToData(data);
 
       const oldData = this.state.data;
-      this._setEditing(false, data);
-      setTimeout(() => {
+      this._setEditing(false, data).then(() => {
         this._setSelectionObject(this._getSelectionFromChange(oldData, data), true);
-      }, 0);
+      });
     }
   }
 
@@ -546,10 +580,9 @@ class Sheet extends React.Component {
       data = this._dataToData(data);
 
       const oldData = this.state.data;
-      this._setEditing(false, data);
-      setTimeout(() => {
+      this._setEditing(false, data).then(() => {
         this._setSelectionObject(this._getSelectionFromChange(oldData, data), true);
-      }, 0);
+      });
     }
   }
 
@@ -599,6 +632,8 @@ class Sheet extends React.Component {
 
     e.clipboardData.setData('text/plain', data.join('\n'));
     e.preventDefault();
+
+    this._setCopySelectionObject(sel);
   }
 
   _handlePaste = (e) => {
@@ -679,6 +714,8 @@ class Sheet extends React.Component {
         });
       });
     }
+
+    data = this._getDataWithSelection(data, this.state.copySelection, {}, 'copySelection');
 
     this.setState({ data });
     if (!isSingle) {
@@ -824,7 +861,9 @@ class Sheet extends React.Component {
     const columnData = column.get('column');
     const columnIndex = column.get('__index');
     const sel = row.get('selection') || {};
+    const copySel = row.get('copySelection') || {};
 
+    //  Selection
     const focused = sel.startRow === rowIndex && sel.startCol === columnIndex;
     const selected = inBetweenArea(rowIndex, columnIndex, sel.startRow, sel.endRow, sel.startCol, sel.endCol);
 
@@ -841,9 +880,21 @@ class Sheet extends React.Component {
     const isTop = Math.min(sel.startRow, sel.endRow) === rowIndex;
     const isBottom = Math.max(sel.startRow, sel.endRow) === rowIndex;
 
+    //  Errors
     const errors = row.get('errors') || {};
+
+    //  Editing
     const editing = row.get('editing') === columnIndex && focused;
 
+    //  Copy selection
+    const copySelectedRow = inBetween(rowIndex, copySel.startRow, copySel.endRow);
+    const copySelectedCol = inBetween(columnIndex, copySel.startCol, copySel.endCol);
+    const isCopyLeft = Math.min(copySel.startCol, copySel.endCol) === columnIndex;
+    const isCopyRight = Math.max(copySel.startCol, copySel.endCol) === columnIndex;
+    const isCopyTop = Math.min(copySel.startRow, copySel.endRow) === rowIndex;
+    const isCopyBottom = Math.max(copySel.startRow, copySel.endRow) === rowIndex;
+
+    //  Return cell
     return (
       <Cell
         data={ (!editing && columnData.formatter) ? columnData.formatter(cellData) : cellData }
@@ -858,6 +909,11 @@ class Sheet extends React.Component {
         isTop={ isTop }
         isBottom={ isBottom }
         error={ errors[cellKey] }
+
+        isCopyLeft={ isCopyLeft && copySelectedRow }
+        isCopyRight={ isCopyRight && copySelectedRow }
+        isCopyTop={ isCopyTop && copySelectedCol }
+        isCopyBottom={ isCopyBottom && copySelectedCol }
 
         column={ columnData }
         selection={ sel }

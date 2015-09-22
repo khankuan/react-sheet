@@ -49,7 +49,7 @@ class Cell extends React.Component {
     this.setState({data: this.props.data});
   }
 
-  _getEdges (sel, selected, focused, rowIndex, columnIndex) {
+  _getEdges (sel, selected, focused) {
     return {
       left: selected && this.props.isLeft || focused,
       right: selected && this.props.isRight || focused,
@@ -149,8 +149,6 @@ class Cell extends React.Component {
     const hasPrevRow = this.props.hasPrevRow;
     const hasPrevColumn = this.props.hasPrevColumn;
     const error = this.props.error;
-    const rowIndex = this.props.rowIndex;
-    const columnIndex = this.props.columnIndex;
 
     const styles = [Styles.Cell.input];
 
@@ -180,8 +178,23 @@ class Cell extends React.Component {
       });
     }
 
-    //  Edges
-    const edges = this._getEdges(sel, selected, focused, rowIndex, columnIndex);
+    //  Copy Edges
+    const copyColor = Styles.Colors.primary;
+    if (this.props.isCopyLeft){
+      styles.push({paddingLeft: (6 + 1 - 1) + 'px', borderLeftWidth: '1px', borderLeftColor: copyColor, borderLeftStyle: 'dashed'});
+    }
+    if (this.props.isCopyRight){
+      styles.push({paddingRight: (6 - 1) + 'px', borderRightWidth: '1px', borderRightColor: copyColor, borderRightStyle: 'dashed'});
+    }
+    if (this.props.isCopyTop){
+      styles.push({paddingTop: (4 + 1 - 1) + 'px', borderTopWidth: '1px', borderTopColor: copyColor, borderTopStyle: 'dashed'});
+    }
+    if (this.props.isCopyBottom){
+      styles.push({paddingBottom: (4 - 1) + 'px', borderBottomWidth: '1px', borderBottomColor: copyColor, borderBottomStyle: 'dashed'});
+    }
+
+    //  Selection Edges
+    const edges = this._getEdges(sel, selected, focused);
     const px = focused ? 2 : 1;
     const color = Styles.Colors.primary;
 
@@ -267,6 +280,11 @@ Cell.propTypes = {
   isBottom: React.PropTypes.bool,
   editing: React.PropTypes.bool,
   error: React.PropTypes.string,
+
+  isCopyLeft: React.PropTypes.bool,
+  isCopyRight: React.PropTypes.bool,
+  isCopyTop: React.PropTypes.bool,
+  isCopyBottom: React.PropTypes.bool,
 
   column: React.PropTypes.shape({
     options: React.PropTypes.array
