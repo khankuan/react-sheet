@@ -19,7 +19,8 @@ import AutoPosition from './AutoPosition';
 import ErrorBox from './ErrorBox';
 import Menu from './Menu';
 
-import { inBetween, inBetweenArea, isInParent, ignoreKeyCodes, isCommand, isFirefox, isSafari } from './helper';
+import { inBetween, inBetweenArea, areaInBetweenArea, isInParent,
+          ignoreKeyCodes, isCommand, isFirefox, isSafari } from './helper';
 
 @Radium
 class Sheet extends React.Component {
@@ -394,6 +395,10 @@ class Sheet extends React.Component {
   }
 
   _handleGlobalMouseDown = (type, selection, e) => {
+    if (areaInBetweenArea(selection, this.state.selection)) {
+      return;
+    }
+
     if (this.state.editing) {
       setTimeout(() => {
         this.__dragging[type] = true;
@@ -413,8 +418,11 @@ class Sheet extends React.Component {
       errorsArr.push(errors[key]);
     }
 
-    this._handleCellMouseEnter(errorsArr, e);
     this._handleGlobalMouseOver(type, selection);
+
+    if (errorsArr.length > 0){
+      this._handleCellMouseEnter(errorsArr, e);
+    }
   }
 
   _handleGlobalMouseOver = (type, selection) => {
@@ -750,8 +758,15 @@ class Sheet extends React.Component {
     });
   }
 
-  _handleRowContextMenu (row, e) {
-    this.setState({ rowMenu: {row, e} });
+  _handleRowContextMenu (row, isHeader, e) {
+    e.preventDefault();
+    this.setState({
+      rowMenu: {
+        row,
+        position: {left: e.clientX, top: e.clientY},
+        isHeader
+      }
+    });
   }
 
   _handleSelectionContextMenu (selection, e) {
@@ -810,7 +825,8 @@ class Sheet extends React.Component {
       <RowIndex
         selected={ column.__allSelected }
         getStyle={ this.props.getRowHeaderStyle }
-        onMouseDown={ this._handleSelectAll } />
+        onMouseDown={ this._handleSelectAll }
+        onContextMenu={ this._handleRowContextMenu.bind(this, column, true) } />
     );
   }
 
@@ -829,12 +845,13 @@ class Sheet extends React.Component {
           startRow: rowIndex,
           endRow: rowIndex,
           startCol: 0,
-          endCol: this.state.columns.length
+          endCol: this.state.columns.length - 1
         }) }
         onMouseEnter={ this._handleRowIndexMouseOver.bind(this, 'row', {
           endRow: rowIndex
         }, row.get('errors')) }
-        onMouseLeave={ this._handleCellMouseLeave } />
+        onMouseLeave={ this._handleCellMouseLeave }
+        onContextMenu={ this._handleRowContextMenu.bind(this, column, false) } />
     );
   }
 
@@ -846,7 +863,7 @@ class Sheet extends React.Component {
         getStyle={ this.props.getColumnHeaderStyle }
         onMouseDown={this._handleGlobalMouseDown.bind(this, 'column', {
           startRow: 0,
-          endRow: this.state.data.size,
+          endRow: this.state.data.size - 1,
           startCol: column.get('__index'),
           endCol: column.get('__index')
         }) }
@@ -1013,6 +1030,25 @@ class Sheet extends React.Component {
     );
   }
 
+  _getRowMenu () {
+    if (!this.state.rowMenu) {
+      return;
+    }
+
+    const rowMenu = this.state.rowMenu;
+    const isHeader = rowMenu.isHeader;
+
+    return (
+      <AutoPosition
+        anchorBox={ {left: rowMenu.position.left, top: rowMenu.position.top} } >
+        <Menu items={[
+            isHeader ? null : {label: 'Delete rows', onClick: this._handleDeleteRow},
+            {label: 'Clear', onClick: this._handleDelete }
+          ]} />
+      </AutoPosition>
+    );
+  }
+
   render () {
     return (
       <div
@@ -1043,6 +1079,7 @@ class Sheet extends React.Component {
 
         { this._getErrorPopover() }
         { this._getColumnMenu() }
+        { this._getRowMenu() }
 
       </div>
     );

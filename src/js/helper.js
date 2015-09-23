@@ -6,6 +6,11 @@ export function inBetweenArea (x, y, startX, endX, startY, endY) {
   return inBetween(x, startX, endX) && inBetween(y, startY, endY);
 }
 
+export function areaInBetweenArea (inner, outer) {
+  return inBetweenArea(inner.startRow, inner.startCol, outer.startRow, outer.endRow, outer.startCol, outer.endCol) &&
+          inBetweenArea(inner.endRow, inner.endCol, outer.startRow, outer.endRow, outer.startCol, outer.endCol);
+}
+
 export function isEqualObject (a, b, ignoreKeys = {}) {
   for (let key in a){
     if (a[key] !== b[key] &&

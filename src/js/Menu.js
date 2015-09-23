@@ -10,7 +10,9 @@ class Menu extends React.Component {
       return;
     }
 
-    return this.props.items.map((item, i) => {
+    return this.props.items.filter((item) => {
+      return !!item;
+    }).map((item, i) => {
       return (
         <div
           key={i}
