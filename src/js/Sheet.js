@@ -237,10 +237,10 @@ class Sheet extends React.Component {
   _setSelectionPoint = (startRow, endRow, startCol, endCol, force) => {
     const prevSelection = this.state.selection;
     const selection = {
-      startRow: Math.max(Math.min(startRow, this.props.rowCount - 1), 0),
-      endRow: Math.max(Math.min(endRow, this.props.rowCount - 1), 0),
-      startCol: Math.max(Math.min(startCol, this.state.columns.length - 1), 0),
-      endCol: Math.max(Math.min(endCol, this.state.columns.length - 1), 0)
+      startRow,
+      endRow,
+      startCol,
+      endCol
     };
 
     if (_.isEqual(selection, this.state.selection) && !force){
@@ -395,7 +395,7 @@ class Sheet extends React.Component {
   }
 
   _handleGlobalMouseDown = (type, selection, e) => {
-    if (areaInBetweenArea(selection, this.state.selection)) {
+    if (e.button === 2 && areaInBetweenArea(selection, this.state.selection)) {
       return;
     }
 
@@ -816,6 +816,36 @@ class Sheet extends React.Component {
     this.setState({ data });
   }
 
+  _handleDeleteRow = () => {
+    const selection = this.state.selection;
+    let data = this.state.data;
+
+    data = data.splice(selection.startRow, selection.endRow - selection.startRow + 1);
+
+    this.setState({ data }, () => {
+      this._setSelectionPoint(-1, -1, -1, -1);
+    });
+  }
+
+  _handleInsertRow = (startRow, amount) => {
+    let data = this.state.data;
+
+    const newRows = [];
+    for (let i = 0; i < amount; i++) {
+      let row = new Immutable.Map({data: new Immutable.Map({})});
+      const errors = this._validateRow(this.props.rowValidator, this.state.columns, row);
+      if (errors.length > 0){
+        row = row.set('errors', errors);
+      }
+      newRows.push(row);
+    }
+
+    data = data.splice(startRow, 0, ...newRows);
+
+    this.setState({ data }, () => {
+      this._setSelectionPoint(startRow, startRow + amount - 1, 0, this.state.columns.size);
+    });
+  }
 
   /**
    * Rendering
@@ -1038,11 +1068,18 @@ class Sheet extends React.Component {
     const rowMenu = this.state.rowMenu;
     const isHeader = rowMenu.isHeader;
 
+    const selection = this.state.selection;
+    const startRow = Math.min(selection.startRow, selection.endRow);
+    const endRow = Math.max(selection.startRow, selection.endRow);
+    const rowCount = endRow - startRow + 1;
+
     return (
       <AutoPosition
         anchorBox={ {left: rowMenu.position.left, top: rowMenu.position.top} } >
         <Menu items={[
-            isHeader ? null : {label: 'Delete rows', onClick: this._handleDeleteRow},
+            isHeader ? null : {label: 'Insert ' + rowCount + ' above', onClick: this._handleInsertRow.bind(this, startRow, rowCount)},
+            isHeader ? null : {label: 'Insert ' + rowCount + ' below', onClick: this._handleInsertRow.bind(this, endRow + 1, rowCount)},
+            isHeader ? null : {label: 'Delete ' + rowCount + ' row', onClick: this._handleDeleteRow},
             {label: 'Clear', onClick: this._handleDelete }
           ]} />
       </AutoPosition>
