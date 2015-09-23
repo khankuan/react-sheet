@@ -252,7 +252,8 @@ class Cell extends React.Component {
         onMouseOver={ this.props.onMouseOver }
         onMouseEnter = { this.props.onMouseEnter }
         onMouseLeave = { this.props.onMouseLeave }
-        onDoubleClick={ this.props.onDoubleClick } >
+        onDoubleClick={ this.props.onDoubleClick }
+        onContextMenu={ this.props.onContextMenu } >
         <input
           ref='input'
           type='text'
@@ -305,7 +306,8 @@ Cell.propTypes = {
   onMouseOver: React.PropTypes.func,
   onMouseEnter: React.PropTypes.func,
   onMouseLeave: React.PropTypes.func,
-  onDoubleClick: React.PropTypes.func
+  onDoubleClick: React.PropTypes.func,
+  onContextMenu: React.PropTypes.func
 };
 
 export default Cell;

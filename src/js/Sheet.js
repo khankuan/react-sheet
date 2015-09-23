@@ -769,8 +769,14 @@ class Sheet extends React.Component {
     });
   }
 
-  _handleSelectionContextMenu (selection, e) {
-    this.setState({ selectionMenu: {selection, e} });
+  _handleSelectionContextMenu = (e) => {
+    e.preventDefault();
+    this.setState({
+      selectionMenu: {
+        selection: this.state.selection,
+        position: {left: e.clientX, top: e.clientY}
+      }
+    });
   }
 
   _handleBaseClick = (e) => {
@@ -982,7 +988,8 @@ class Sheet extends React.Component {
         }) }
         onMouseEnter={ errors[cellKey] ? this._handleCellMouseEnter.bind(this, errors[cellKey]) : null }
         onMouseLeave={ this._handleCellMouseLeave }
-        onDoubleClick={this._handleDoubleClick} />
+        onDoubleClick={this._handleDoubleClick}
+        onContextMenu={ this._handleSelectionContextMenu } />
     );
   }
 
@@ -1086,6 +1093,23 @@ class Sheet extends React.Component {
     );
   }
 
+  _getSelectionMenu () {
+    if (!this.state.selectionMenu) {
+      return;
+    }
+
+    const selectionMenu = this.state.selectionMenu;
+
+    return (
+      <AutoPosition
+        anchorBox={ {left: selectionMenu.position.left, top: selectionMenu.position.top} } >
+        <Menu items={[
+            {label: 'Clear', onClick: this._handleDelete }
+          ]} />
+      </AutoPosition>
+    );
+  }
+
   render () {
     return (
       <div
@@ -1117,6 +1141,7 @@ class Sheet extends React.Component {
         { this._getErrorPopover() }
         { this._getColumnMenu() }
         { this._getRowMenu() }
+        { this._getSelectionMenu() }
 
       </div>
     );
