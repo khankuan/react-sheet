@@ -38,7 +38,8 @@ class Sheet extends React.Component {
       data: this._getInitialData(props, columns),
       selection: {},
       copySelection: {},
-      showError: null
+      showError: null,
+      isCut: false
     };
 
     this.__dragging = {};
@@ -530,7 +531,8 @@ class Sheet extends React.Component {
       }
       e.preventDefault();
     }
-    else if (ctrl && e.keyCode === 67 && !editing){
+    //  Copy and cut
+    else if (ctrl && (e.keyCode === 67 || e.keyCode === 88) && !editing){
       if (isFirefox()){
         this._focusBase();
         //  Force a selection so firefox will trigger oncopy
@@ -544,12 +546,14 @@ class Sheet extends React.Component {
         });
       }
     }
+    //  Paste
     else if (ctrl && e.keyCode === 86 && !editing){
       if (isFirefox()) {
         //  Force a selection so firefox will trigger onpaste
         this._focusDummy();
       }
     }
+    //  Ctrl + A
     else if (ctrl && e.keyCode === 65) {
       this._handleSelectAll();
     }
@@ -594,11 +598,13 @@ class Sheet extends React.Component {
     }
   }
 
-  _handleDelete = (e) => {
-    e.preventDefault();
+  _handleDelete = (e, selection) => {
+    if (e){
+      e.preventDefault();
+    }
 
     let data = this.state.data;
-    const sel = this.state.selection;
+    const sel = selection || this.state.selection;
     const columns = this.state.columns;
 
     for (let rowI = Math.min(sel.startRow, sel.endRow); rowI <= Math.max(sel.startRow, sel.endRow); rowI++){
@@ -615,7 +621,7 @@ class Sheet extends React.Component {
     this.setState({ data });
   }
 
-  _handleCopy = (e) => {
+  _handleCopy = (e, isCut) => {
     if (!isInParent(document.activeElement, React.findDOMNode(this.refs.base)) ||
         this.state.editing){
       return;
@@ -642,6 +648,11 @@ class Sheet extends React.Component {
     e.preventDefault();
 
     this._setCopySelectionObject(sel);
+    this.setState({ isCut });
+  }
+
+  _handleCut = (e) => {
+    this._handleCopy(e, true);
   }
 
   _handlePaste = (e) => {
@@ -723,11 +734,19 @@ class Sheet extends React.Component {
       });
     }
 
+    //  Clear copy selection
+    const copySelection = this.state.copySelection;
     data = this._getDataWithSelection(data, this.state.copySelection, {}, 'copySelection');
 
     this.setState({ data });
     if (!isSingle) {
       this._setSelectionPoint(startRow, startRow + rows.length - 1, startCol, startCol + rows[0].length - 1);
+    }
+
+    //  Clear data for cut area
+    if (this.state.isCut) {
+      this._handleDelete(null, copySelection);
+      this.setState({ isCut: false });
     }
   }
 
