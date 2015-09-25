@@ -519,6 +519,7 @@ class Sheet extends React.Component {
     }
     else if (e.keyCode === 27 && !editing){
        this._setCopySelectionPoint(-1, -1, -1, -1);
+       this.setState({ isCut: false });
     }
     else if (!editing && (e.keyCode === 8 || e.keyCode === 46)){
       this._handleDelete(e);
