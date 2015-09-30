@@ -1,5 +1,5 @@
 # React Sheet
-A library for a simple spreadsheet in React.
+A library for a simple spreadsheet in React. Checkout the [example](http://khankuan.github.io/react-sheet) page.
 
 
 ## Usage
@@ -48,6 +48,7 @@ function submit () {
 ## Behaviour
 - Multiple cell selection
   - by drag, row, column
+- Keyboard shortcuts
   - delete
   - copy
   - paste
@@ -56,12 +57,13 @@ function submit () {
   - redo
   - Up/down/left/right
 - Resize columns
-- Show invalid cells
+- Show invalid rows or cells and error message
+- Sort by column
 
 ## TODO
 - Right click menu (copy, paste, cut)
-- Cut to perserve data before paste
 - Fix safari drag causing i-beam cursor
+- Proper demo page
 
 
 ## Dev Instructions
