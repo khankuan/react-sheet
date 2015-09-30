@@ -1,149 +1,645 @@
 import React from 'react';
 import FixedDataTable from 'fixed-data-table';
-import Immutable from 'immutable';
+import Immutable, { fromJS } from 'immutable';
 import Radium from 'radium';
+import _ from 'lodash';
 
 import '../sass/index.scss';
-
-import Cell from './Cell';
-import Header from './Header';
-import Autosize from './Autosize';
-import CellWrapper from './CellWrapper';
-import validator from './Validator';
-import Styles from '../styles';
 
 const Table = FixedDataTable.Table;
 const Column = FixedDataTable.Column;
 
-const ignoreKeyCodes = {
-  37: true,
-  38: true,
-  39: true,
-  40: true,
-  16: true,
-  17: true,
-  18: true,
-  27: true,
-  91: true,
-  93: true
-};
+import Autosize from './Autosize';
+import Styles from '../styles';
+import RowIndex from './RowIndex';
+import ColumnHeader from './ColumnHeader';
+import Cell from './Cell';
+import validator from './Validator';
+import AutoPosition from './AutoPosition';
+import ErrorBox from './ErrorBox';
+import Menu from './Menu';
+
+import { inBetween, inBetweenArea, areaInBetweenArea, isInParent,
+          ignoreKeyCodes, isCommand, isFirefox, isSafari } from './helper';
 
 @Radium
 class Sheet extends React.Component {
 
+  /**
+   * Lifecycle
+   */
   constructor (props) {
-    super();
+    super(props);
 
-    let data = [...props.defaultData];
-    while (data.length < props.rowCount){
-      data.push({});
-    }
-
-    data = data.map(d => {
-      return new Immutable.Map(d);
-    });
-
+    const columns = this._getInitialColumns(props);
     this.state = {
       columnWidthOverrides: {},
-      data: new Immutable.List(data),
+      columns,
+      data: this._getInitialData(props, columns),
       selection: {},
-      columnReverseIndex: this._getColumnReverseIndex(props.columns)
+      copySelection: {},
+      showError: null,
+      isCut: false
     };
 
-    this.__history = [this.state.data];
-    this.__historyIndex = 0;
+    this.__dragging = {};
 
-    if (props.window){
-      window[props.window] = this;
-    }
+    this.__history = [];
+    this.__history.push(this.state.data);
+    this.__historyIndex = this.__history.length;
+  }
+
+  _getInitialData = (props, columns) => {
+    const maxRows = Math.max(props.defaultData.length, props.rowCount);
+    let data = _.clone(props.defaultData);
+    data[maxRows - 1] = data[maxRows - 1];
+    data = data.fill({}, props.defaultData.length, maxRows)
+                .map(d => { return { data: d }; });
+
+    data = fromJS(data);
+    data = this._dataWithErrors(props.rowValidator, columns, data);
+
+    return data;
+  }
+
+  _getInitialColumns = (props) => {
+    return props.columns.map((column, i) => {
+      const newColumn = {column, __index: i};
+      return new Immutable.Map(newColumn);
+    });
   }
 
   componentWillMount () {
-    this._handleCellKeyDown = this._handleCellKeyDown.bind(this);
-    this._handleWindowMouseUp = this._handleWindowMouseUp.bind(this);
-    this._handlePaste = this._handlePaste.bind(this);
-    this._handleCopy = this._handleCopy.bind(this);
-    this._handleCut = this._handleCut.bind(this);
-    window.addEventListener('keydown', this._handleCellKeyDown);
-    window.addEventListener('mouseup', this._handleWindowMouseUp);
+    window.addEventListener('mouseup', this._handleGlobalMouseUp);
+    window.addEventListener('keydown', this._handleKeyDown);
     window.addEventListener('paste', this._handlePaste);
     window.addEventListener('copy', this._handleCopy);
     window.addEventListener('cut', this._handleCut);
+    window.addEventListener('beforecopy', this._preventDefault);
+    window.addEventListener('click', this._handleBaseClick);
   }
 
   componentWillUnmount () {
-    window.removeEventListener('keydown', this._handleCellKeyDown);
-    window.removeEventListener('mouseup', this._handleWindowMouseUp);
+    window.removeEventListener('mouseup', this._handleGlobalMouseUp);
+    window.removeEventListener('keydown', this._handleKeyDown);
     window.removeEventListener('paste', this._handlePaste);
     window.removeEventListener('copy', this._handleCopy);
     window.removeEventListener('cut', this._handleCut);
+    window.removeEventListener('beforecopy', this._preventDefault);
+    window.removeEventListener('click', this._handleBaseClick);
   }
 
   componentDidUpdate (prevProps, prevState) {
-    if (prevState.data !== this.state.data && this.__history[this.__historyIndex - 1] !== this.state.data){
+    const data = this.state.data;
+    const previousData = this.__history[this.__historyIndex - 1];
+    if (prevState.data !== data && previousData !== data){
+
+      let foundChanges = false;
+      for (let i = 0; i < data.size; i++){
+        if (data.get(i).get('data') !== previousData.get(i).get('data')){
+          foundChanges = true;
+          break;
+        }
+      }
+
+      if (!foundChanges) {
+        return;
+      }
+
+      this.__history = this.__history.splice(0, this.__historyIndex );
       this.__history.push(this.state.data);
       this.__historyIndex = this.__history.length;
     }
   }
 
-  getValidatedData (cb) {
-    let data = this.state.data;
+  /**
+   * External Methods
+   */
+  getValidatedData = (cb) => {
+    return new Promise((resolve, reject) => {
+      const rowValidator = this.props.rowValidator;
+      const columns = this.state.columns;
 
-    //  Filter rows
-    data = data.filter(d => {
-      return d.size > 0;
-    });
+      const errors = [];
+      this.state.data.forEach((d, i) => {
+        if (d.get('data').size === 0){
+          return;
+        }
 
-    let errors = {};
-    data.forEach((d, i) => {
-      const rowErrors = [];
-      this.props.columns.forEach(column => {
-        const curErrors = validator(d, d.get(column.dataKey), column.required, column.options, column.validator);
-        if (curErrors.length){
-          rowErrors.push({key: column.dataKey, errors: curErrors});
+        const error = this._validateRow(rowValidator, columns, d);
+        if (error) {
+          errors.push({row: i, error});
         }
       });
 
-      if (rowErrors.length > 0){
-        errors[i] = rowErrors;
+      if (errors.length > 0) {
+        reject(errors);
+        return;
+      }
+
+      resolve(this.state.data.filter(d => d.get('data').size > 0).map(d => d.get('data')).toJS());
+    });
+  }
+
+
+  /**
+   * Internal Methods
+   */
+  _dataWithErrors = (rowValidator, columns, data) => {
+    return data.map(row => {
+      return row.set('errors', this._validateRow(rowValidator, columns, row));
+    });
+  }
+
+  _validateRow (rowValidator, columns, row) {
+    const errors = {};
+    const rowData = row.get('data');
+
+    //  No data
+    if (rowData.size === 0){
+      return errors;
+    }
+
+    //  Per column
+    columns.forEach(column => {
+      column = column.get('column');
+      const error = validator(rowData, rowData.get(column.dataKey), column.required, column.options, column.validator);
+      if (error) {
+        errors[column.dataKey] = (column.label || column.dataKey) + ': ' + error;
       }
     });
 
-    if (Object.keys(errors).length > 0){
-      cb(errors);
+    //  Per row
+    if (rowValidator){
+      const error = rowValidator(rowData);
+      if (error) {
+        errors.__row = error;
+      }
+    }
+
+    return Object.keys(errors).length > 0 ? errors : null;
+  }
+
+  _getCurrentDataWithSelection (prevSel, sel, type='selection'){
+    return this._getDataWithSelection(this.state.data, prevSel, sel, type);
+  }
+
+  _getDataWithSelection (data, prevSel, sel, type='selection') {
+    return data.withMutations(d => {
+
+      const doneMap = {}; //  cache for intersection
+
+      //  Prev selection cells
+      [prevSel, sel].forEach(curSel => {
+        const startRow = Math.min(curSel.startRow, curSel.endRow);
+        const endRow = Math.min(this.state.data.size - 1, Math.max(curSel.startRow, curSel.endRow) + 1);
+
+        for (let i = startRow; i <= endRow; i++){
+          if (doneMap[i]){
+            continue;
+          }
+
+          const curData = d.get(i).set(type, sel);
+          if (curData !== d.get(i)) {
+            d.set(i, curData);
+          }
+
+          doneMap[i] = true;
+        }
+      });
+
+    });
+  }
+
+  _getColumnsWithSelection (prevSel, sel) {
+    return this.state.columns.map((column, i) => {
+
+      const prevSelected = inBetween(i, prevSel.startCol, prevSel.endCol);
+      const selected = inBetween(i, sel.startCol, sel.endCol);
+      if (prevSelected !== selected){
+        return column.set('__selected', selected);
+      } else {
+        return column;
+      }
+    });
+  }
+
+  _getRowIndexDataWithSelection (sel) {
+    const allSelected = sel.startRow === 0 && sel.endRow === this.state.data.size - 1 &&
+                          sel.startCol === 0 && sel.endCol === this.state.columns.length - 1;
+
+    if (!this.state.rowIndexData || this.state.rowIndexData.__allSelected !== allSelected){
+      return { __allSelected: allSelected };
     } else {
-      cb(null, data);
+      return this.state.rowIndexData;
     }
   }
 
-  _getColumnReverseIndex (columns) {
-    const index = {};
-    columns.forEach((column, i) => {
-      index[column.dataKey] = i;
-    });
-    return index;
+  _setSelectionPoint = (startRow, endRow, startCol, endCol, force) => {
+    const prevSelection = this.state.selection;
+    const selection = {
+      startRow,
+      endRow,
+      startCol,
+      endCol
+    };
+
+    if (_.isEqual(selection, this.state.selection) && !force){
+      return;
+    }
+
+    const data = this._getCurrentDataWithSelection(prevSelection, selection);
+    const columns = this._getColumnsWithSelection(prevSelection, selection);
+    const rowIndexData = this._getRowIndexDataWithSelection(selection);
+
+    this.setState({ selection, columns, rowIndexData, data });
   }
 
-  _handleResizeColumn (newColumnWidth, key) {
+  _setSelectionObject (obj, force) {
+    const sel = {};
+    _.assign(sel, this.state.selection, obj);
+    this._setSelectionPoint(sel.startRow, sel.endRow, sel.startCol, sel.endCol, force);
+  }
+
+  _setCopySelectionPoint = (startRow, endRow, startCol, endCol) => {
+    const prevCopySelection = this.state.copySelection;
+    const copySelection = {
+      startRow: Math.min(startRow, endRow),
+      endRow: Math.max(startRow, endRow),
+      startCol: Math.min(startCol, endCol),
+      endCol: Math.max(startCol, endCol)
+    };
+
+    if (_.isEqual(copySelection, this.state.copySelection)){
+      return;
+    }
+
+    const data = this._getCurrentDataWithSelection(prevCopySelection, copySelection, 'copySelection');
+
+    this.setState({ copySelection, data });
+  }
+
+  _setCopySelectionObject (obj) {
+    const sel = {};
+    _.assign(sel, this.state.copySelection, obj);
+    this._setCopySelectionPoint(sel.startRow, sel.endRow, sel.startCol, sel.endCol);
+  }
+
+  _rowGetter = (i) => {
+    return this.state.data.get(i);
+  }
+
+  _cellDataGetter = (cellKey, row) => {
+    return row.get('data').get(cellKey);
+  }
+
+  _setEditing = (editing, data) => {
+    return new Promise((resolve, reject) => {
+      const sel = this.state.selection;
+      if (editing !== !!this.state.editing){
+        data = data || this.state.data;
+
+        const prevSel = this.state.editing;
+        if (prevSel) {
+          const prevEditingRow = data.get(prevSel.startRow).delete('editing');
+          data = data.set(prevSel.startRow, prevEditingRow);
+        }
+
+        let row = data.get(sel.startRow);
+        if (editing) {
+          row = row.set('editing', sel.startCol);
+        } else {
+          row = row.delete('editing');
+        }
+        data = data.set(sel.startRow, row);
+      }
+
+      this.setState({ editing: editing ? sel : null, data }, resolve);
+
+      if (!editing) {
+        setTimeout(this._focusBase, 0);
+      }
+    });
+  }
+
+  _focusBase = () => {
+    React.findDOMNode(this.refs.base).focus();
+  }
+
+  _focusDummy = () => {
+    React.findDOMNode(this.refs.dummy).select();
+  }
+
+  _dataToData (data) {
+    if (data) {
+      return data.map(d => { return new Immutable.Map({ data: d.get('data'), errors: d.get('errors')}); });
+    } else {
+      return data;
+    }
+  }
+
+  _getSelectionFromChange (data, newData) {
+    let selection = {};
+
+    //  Check row
+    for (let i = 0; i <= newData.size; i++){
+      //  If start not found and row is different, it means startRow
+      if (selection.startRow === undefined && newData.get(i) &&
+          newData.get(i).get('data') !== data.get(i).get('data')) {
+        selection.startRow = i;
+      }
+
+      //  If start found and row is same, or row not found, it means ended
+      else if (selection.startRow !== undefined &&
+               (!newData.get(i) || newData.get(i).get('data') === data.get(i).get('data'))) {
+        selection.endRow = i - 1;
+        break;
+      }
+    }
+
+    //  Check column
+    for (let i = selection.startRow; i <= selection.endRow; i++) {
+
+      for (let j = 0; j <= this.state.columns.length; j++){
+        const dataKey = this.state.columns[j] ? this.state.columns[j].get('column').dataKey : null;
+
+        //  If start not found and col is different, it means startRow
+        if ((selection.startCol === undefined || selection.startCol > j) && newData.get(i) &&
+            newData.get(i).get('data').get(dataKey) !== data.get(i).get('data').get(dataKey)) {
+          selection.startCol = j;
+        }
+
+        //  If start found and col is same, or col not found, it means ended
+        else if (selection.startCol !== undefined && (selection.endCol === undefined || selection.endCol < j) &&
+                 (!newData.get(i) || newData.get(i).get('data').get(dataKey) === data.get(i).get('data').get(dataKey))) {
+          selection.endCol = j - 1;
+          break;
+        }
+      }
+    }
+
+    return selection;
+  }
+
+
+  /**
+   * Handlers
+   */
+  _preventDefault = (e) => {
+    e.preventDefault();
+  }
+
+  _handleResizeColumn = (newColumnWidth, key) => {
     const columnWidthOverrides = {...this.state.columnWidthOverrides};
     columnWidthOverrides[key] = newColumnWidth;
-    this.setState({
-      columnWidthOverrides
+    this.setState({ columnWidthOverrides });
+  }
+
+  _handleGlobalMouseDown = (type, selection, e) => {
+    if (e.button === 2 && areaInBetweenArea(selection, this.state.selection)) {
+      return;
+    }
+
+    if (this.state.editing) {
+      setTimeout(() => {
+        this.__dragging[type] = true;
+        this._setSelectionObject(selection);
+        //this._focusBase();
+      }, 0);
+    } else {
+      this.__dragging[type] = true;
+      this._setSelectionObject(selection);
+      //this._focusBase();
+    }
+  }
+
+  _handleRowIndexMouseOver = (type, selection, errors, e) => {
+    const errorsArr = [];
+    for (let key in errors) {
+      errorsArr.push(errors[key]);
+    }
+
+    this._handleGlobalMouseOver(type, selection);
+
+    if (errorsArr.length > 0){
+      this._handleCellMouseEnter(errorsArr, e);
+    }
+  }
+
+  _handleGlobalMouseOver = (type, selection) => {
+    if (this.__dragging[type] && !this.state.editing) {
+      this._setSelectionObject(selection);
+    }
+  }
+
+  _handleGlobalMouseUp = () => {
+    this.__dragging = {};
+  }
+
+  _handleSelectAll = () => {
+    this._setSelectionPoint(0, Math.max(this.state.data.size, this.props.rowCount), 0, this.state.columns.length);
+  }
+
+  _handleDataUpdate (rowIndex, dataKey, value){
+    let data = this.state.data;
+    let row = data.get(rowIndex);
+
+    let rowData = row.get('data');
+    if (value){
+      row = row.set('data', rowData.set(dataKey, value));
+    } else {
+      row = row.set('data', rowData.delete(dataKey));
+    }
+
+    //  Errors
+    row = row.set('errors', this._validateRow(this.props.rowValidator, this.state.columns, row));
+
+    data = data.set(rowIndex, row);
+    this._setEditing(false, data).then(() => {
+      this._setCopySelectionPoint(-1, -1, -1, -1);
     });
   }
 
-  _handleCopy (e) {
-    if (this.state.editing){
+  _handleKeyDown = (e) => {
+    if (!isInParent(e.target, React.findDOMNode(this.refs.base))){
+      return;
+    }
+
+    //  Arrow events
+    const sel = this.state.selection;
+    const ctrl = (e.ctrlKey || e.metaKey);
+    const editing = this.state.editing;
+
+    if (e.keyCode === 38){
+      e.preventDefault();
+      if (e.shiftKey){
+        this._setSelectionObject({ endRow: ctrl ? 0 : sel.endRow - 1 });
+      } else {
+        this._setSelectionPoint(sel.startRow - 1, sel.startRow - 1, sel.startCol, sel.startCol);
+      }
+    }
+    else if (e.keyCode === 40){
+      e.preventDefault();
+      if (e.shiftKey){
+        this._setSelectionObject({ endRow: ctrl ? this.props.rowCount : sel.endRow + 1 });
+      } else {
+        this._setSelectionPoint(sel.startRow + 1, sel.startRow + 1, sel.startCol, sel.startCol);
+      }
+    }
+    else if (e.keyCode === 37 && !editing){
+      e.preventDefault();
+      if (e.shiftKey){
+        this._setSelectionObject({ endCol: ctrl ? 0 : sel.endCol - 1 });
+      } else {
+        this._setSelectionPoint(sel.startRow, sel.startRow, sel.startCol - 1, sel.startCol - 1);
+      }
+    }
+    else if (e.keyCode === 39 && !editing){
+      e.preventDefault();
+      if (e.shiftKey){
+        this._setSelectionObject({ endCol: ctrl ? this.props.columns.length : sel.endCol + 1 });
+      } else {
+        this._setSelectionPoint(sel.startRow, sel.startRow, sel.startCol + 1, sel.startCol + 1);
+      }
+    }
+    else if (e.keyCode === 13){
+      e.preventDefault();
+      this._setSelectionPoint(sel.startRow + 1, sel.startRow + 1, sel.startCol, sel.startCol);
+    }
+    else if (e.keyCode === 9){
+      e.preventDefault();
+      if (e.shiftKey){
+        this._setSelectionPoint(sel.startRow, sel.startRow, sel.startCol - 1, sel.startCol - 1);
+      } else {
+        this._setSelectionPoint(sel.startRow, sel.startRow, sel.startCol + 1, sel.startCol + 1);
+      }
+    }
+    else if (e.keyCode === 27 && editing){
+      this._setEditing(false);
+    }
+    else if (e.keyCode === 27 && !editing){
+       this._setCopySelectionPoint(-1, -1, -1, -1);
+       this.setState({ isCut: false });
+    }
+    else if (!editing && (e.keyCode === 8 || e.keyCode === 46)){
+      this._handleDelete(e);
+    }
+    else if (!editing && e.keyCode === 90 && ctrl){
+      if (e.shiftKey) {
+        this._handleRedo();
+      } else {
+        this._handleUndo();
+      }
+      e.preventDefault();
+    }
+    //  Copy and cut
+    else if (ctrl && (e.keyCode === 67 || e.keyCode === 88) && !editing){
+      if (isFirefox()){
+        this._focusBase();
+        //  Force a selection so firefox will trigger oncopy
+        const selection = document.getSelection();
+        const range = document.createRange();
+        range.setStartBefore(React.findDOMNode(this.refs.dummy));
+        range.setEndAfter(React.findDOMNode(this.refs.dummy));
+        selection.addRange(range);
+        setTimeout(() => {
+          selection.removeAllRanges();
+        });
+      }
+    }
+    //  Paste
+    else if (ctrl && e.keyCode === 86 && !editing){
+      if (isFirefox()) {
+        //  Force a selection so firefox will trigger onpaste
+        this._focusDummy();
+      }
+    }
+    //  Ctrl + A
+    else if (ctrl && e.keyCode === 65) {
+      this._handleSelectAll();
+    }
+    else if (!ignoreKeyCodes[e.keyCode] && !this.state.editing && !isCommand(e)){
+      this._setEditing(true);
+    }
+    else if (ctrl && !isCommand(e)) {
+      //  To focus on input for safari paste event
+      if (isSafari()) {
+        this._focusBase();
+      }
+    }
+  }
+
+  _handleDoubleClick = (e) => {
+    this._setEditing(true);
+  }
+
+  _handleUndo = () => {
+    if (this.__historyIndex > 1){
+      this.__historyIndex--;
+      let data = this.__history[this.__historyIndex - 1];
+      data = this._dataToData(data);
+
+      const oldData = this.state.data;
+      this._setEditing(false, data).then(() => {
+        this._setSelectionObject(this._getSelectionFromChange(oldData, data), true);
+      });
+    }
+  }
+
+  _handleRedo = () => {
+    if (this.__historyIndex < this.__history.length){
+      this.__historyIndex++;
+      let data = this.__history[this.__historyIndex - 1];
+      data = this._dataToData(data);
+
+      const oldData = this.state.data;
+      this._setEditing(false, data).then(() => {
+        this._setSelectionObject(this._getSelectionFromChange(oldData, data), true);
+      });
+    }
+  }
+
+  _handleDelete = (e, selection) => {
+    if (e){
+      e.preventDefault();
+    }
+
+    let data = this.state.data;
+    const sel = selection || this.state.selection;
+    const columns = this.state.columns;
+
+    for (let rowI = Math.min(sel.startRow, sel.endRow); rowI <= Math.max(sel.startRow, sel.endRow); rowI++){
+      let row = data.get(rowI);
+      let rowData = row.get('data');
+      for (let colI = Math.min(sel.startCol, sel.endCol); colI <= Math.max(sel.startCol, sel.endCol); colI++){
+        const dataKey = columns[colI].get('column').dataKey;
+        rowData = rowData.delete(dataKey);
+      }
+      row = row.set('data', rowData);
+      row = row.set('errors', this._validateRow(this.props.rowValidator, columns, row));
+      data = data.set(rowI, row);
+    }
+    this.setState({ data });
+  }
+
+  _handleCopy = (e, isCut) => {
+    if (!isInParent(document.activeElement, React.findDOMNode(this.refs.base)) ||
+        this.state.editing){
       return;
     }
 
     const data = [];
     const sel = this.state.selection;
-    for (let row = sel.startRow; row <= sel.endRow; row++){
+    const startRow = Math.min(sel.startRow, sel.endRow);
+    const endRow = Math.max(sel.startRow, sel.endRow);
+    for (let row = startRow; row <= endRow; row++){
       const rowDataRaw = [];
-      const rowData = this.state.data.get(row);
-      for (let col = sel.startCol; col <= sel.endCol; col++){
-        const dataKey = this.props.columns[col].dataKey;
+      const rowData = this.state.data.get(row).get('data');
+
+      const startCol = Math.min(sel.startCol, sel.endCol);
+      const endCol = Math.max(sel.startCol, sel.endCol);
+      for (let col = startCol; col <= endCol; col++){
+        const dataKey = this.state.columns[col].get('column').dataKey;
         rowDataRaw.push(rowData.get(dataKey));
       }
       data.push(rowDataRaw.join('\t'));
@@ -151,93 +647,75 @@ class Sheet extends React.Component {
 
     e.clipboardData.setData('text/plain', data.join('\n'));
     e.preventDefault();
+
+    this._setCopySelectionObject(sel);
+    this.setState({ isCut });
   }
 
-  _handleCut (e) {
-    if (this.state.editing){
-      return;
-    }
-
-    let data = this.state.data;
-    const copiedData = [];
-    const sel = this.state.selection;
-    for (let row = sel.startRow; row <= sel.endRow; row++){
-      const rowDataRaw = [];
-      const rowData = data.get(row);
-      for (let col = sel.startCol; col <= sel.endCol; col++){
-        const dataKey = this.props.columns[col].dataKey;
-        rowDataRaw.push(rowData.get(dataKey));
-        data = data.set(row, rowData.delete(dataKey));
-      }
-      copiedData.push(rowData.join('\t'));
-    }
-
-    e.clipboardData.setData('text/plain', copiedData.join('\n'));
-    e.preventDefault();
-    this.setState({data});
+  _handleCut = (e) => {
+    this._handleCopy(e, true);
   }
 
-  _handleDelete (e) {
-    if (this.state.editing){
+  _handlePaste = (e) => {
+    if (!isInParent(document.activeElement, React.findDOMNode(this.refs.base)) ||
+        this.state.editing){
       return;
     }
 
     e.preventDefault();
+    let text = (e.originalEvent || e).clipboardData.getData('text/plain');
 
-    let data = this.state.data;
-    const sel = this.state.selection;
-    for (let rowI = Math.min(sel.startRow, sel.endRow); rowI <= Math.max(sel.startRow, sel.endRow); rowI++){
-      let rowData = data.get(rowI);
-      for (let colI = Math.min(sel.startCol, sel.endCol); colI <= Math.max(sel.startCol, sel.endCol); colI++){
-        const dataKey = this.props.columns[colI].dataKey;
-        rowData = rowData.delete(dataKey);
-      }
-      data = data.set(rowI, rowData);
-    }
-    this.setState({data});
-  }
-
-  _handlePaste (e) {
-    if (this.state.editing){
-      return;
+    if (text.charCodeAt(text.length - 1) === 65279){
+      text = text.substring(0, text.length - 1);
     }
 
-    e.preventDefault();
-    const text = (e.originalEvent || e).clipboardData.getData('text/plain');
-    let rows = text.split(/[\n\r]+/);
+    let rows = text.replace(/\r/g, '\n').split('\n');
     rows = rows.map(row => {
       return row.split('\t');
     });
 
     let data = this.state.data;
     const sel = this.state.selection;
-    const isSingle = rows.length === 1 && rows[0].length === 1;
+    const isSingle = rows.length === 1 && rows[0] && rows[0].length === 1;
+
+    const startRow = Math.min(sel.startRow, sel.endRow);
+    const endRow = Math.max(sel.startRow, sel.endRow);
+    const startCol = Math.min(sel.startCol, sel.endCol);
+    const endCol = Math.max(sel.startCol, sel.endCol);
 
     //  If single cell
     if (isSingle){
-      for (let rowI = sel.startRow; rowI <= sel.endRow; rowI++){
-        let rowData = data.get(rowI);
-        for (let colI = sel.startCol; colI <= sel.endCol; colI++){
+      for (let rowI = startRow; rowI <= endRow; rowI++){
+        let row = data.get(rowI);
+        let rowData = row.get('data');
+        for (let colI = startCol; colI <= endCol; colI++){
           const dataKey = this.props.columns[colI].dataKey;
-          rowData = rowData.set(dataKey, rows[0][0]);
+          if (rows[0][0]){
+            rowData = rowData.set(dataKey, rows[0][0]);
+          } else {
+            rowData = rowData.delete(dataKey);
+          }
         }
-        data = data.set(rowI, rowData);
+        row = row.set('data', rowData);
+        row = row.set('errors', this._validateRow(this.props.rowValidator, this.state.columns, row));
+        data = data.set(rowI, row);
       }
     }
 
     //  If not single cell
     else {
-      rows.forEach((row, i) => {
-        i += sel.startRow;
+      rows.forEach((r, i) => {
+        i += startRow;
 
         //  Out of bound
         if (i >= this.props.rowCount){
           return;
         }
 
-        let rowData = data.get(i) || new Immutable.Map();
-        row.forEach((value, j) => {
-          j += sel.startCol;
+        let row = data.get(i);
+        let rowData = row.get('data');
+        r.forEach((value, j) => {
+          j += startCol;
 
           //  Out of bound
           if (j >= this.props.columns.length){
@@ -245,335 +723,467 @@ class Sheet extends React.Component {
           }
 
           const dataKey = this.props.columns[j].dataKey;
-          rowData = rowData.set(dataKey, value);
-          data = data.set(i, rowData);
+          if (value) {
+            rowData = rowData.set(dataKey, value);
+          } else {
+            rowData = rowData.delete(dataKey);
+          }
+          row = row.set('data', rowData);
+          row = row.set('errors', this._validateRow(this.props.rowValidator, this.state.columns, row));
+          data = data.set(i, row);
         });
       });
     }
 
-    this.setState({data});
-  }
+    //  Clear copy selection
+    const copySelection = this.state.copySelection;
+    data = this._getDataWithSelection(data, this.state.copySelection, {}, 'copySelection');
 
-  _inBetween (x, start, end){
-    if (start < end){
-      return x >= start && x <= end;
-    } else {
-      return x <= start && x >= end;
+    this.setState({ data });
+    if (!isSingle) {
+      this._setSelectionPoint(startRow, startRow + rows.length - 1, startCol, startCol + rows[0].length - 1);
+    }
+
+    //  Clear data for cut area
+    if (this.state.isCut) {
+      this._handleDelete(null, copySelection);
+      this.setState({ isCut: false });
     }
   }
 
-  _indexRenderer (cellData, cellKey, rowData, rowIndex, columnData, width) {
-    const selected = this._inBetween(rowIndex,
+  _handleCellMouseEnter = (errors, e) => {
+    const cell = e.target.tagName === 'div' ? e.target : e.target.parentNode.parentNode;
+
+    this.setState({
+      showError: {
+        errors: Array.isArray(errors) ? errors : [errors],
+        boundingBox: cell.getBoundingClientRect()
+      }
+    });
+  }
+
+  _handleCellMouseLeave = () => {
+    if (this.state.showError) {
+      this.setState({ showError: null });
+    }
+  }
+
+  _handleColumnContextMenu (column, e) {
+    e.preventDefault();
+    this.setState({
+      columnMenu: {
+        column,
+        position: {left: e.clientX, top: e.clientY}
+      }
+    });
+  }
+
+  _handleRowContextMenu (row, isHeader, e) {
+    e.preventDefault();
+    this.setState({
+      rowMenu: {
+        row,
+        position: {left: e.clientX, top: e.clientY},
+        isHeader
+      }
+    });
+  }
+
+  _handleSelectionContextMenu = (e) => {
+    e.preventDefault();
+    this.setState({
+      selectionMenu: {
+        selection: this.state.selection,
+        position: {left: e.clientX, top: e.clientY}
+      }
+    });
+  }
+
+  _handleBaseClick = (e) => {
+    setTimeout(() => {
+      //  Reset menus
+      if (this.state.columnMenu){
+        this.setState({ columnMenu: null });
+      }
+      if (this.state.rowMenu){
+        this.setState({ rowMenu: null });
+      }
+      if (this.state.selectionMenu){
+        this.setState({ selectionMenu: null });
+      }
+    }, 0);
+  }
+
+  _handleSort = (direction) => {
+
+    const column = this.state.columnMenu.column;
+    const dataKey = column.get('column').dataKey;
+
+    let data = this.state.data;
+    data = data.sort((a, b) => {
+      const dataA = a.get('data').get(dataKey);
+      const dataB = b.get('data').get(dataKey);
+
+      if (!dataA && !dataB) {
+        return b.get('data').size - a.get('data').size;
+      }
+
+      if (!dataA) {
+        return 1;
+      }
+
+      if (!dataB) {
+        return -1;
+      }
+
+      return dataB > dataA ? -direction : direction;
+    });
+
+    this.setState({ data });
+  }
+
+  _handleDeleteRow = () => {
+    const selection = this.state.selection;
+    let data = this.state.data;
+
+    data = data.splice(selection.startRow, selection.endRow - selection.startRow + 1);
+
+    this.setState({ data }, () => {
+      this._setSelectionPoint(-1, -1, -1, -1);
+    });
+  }
+
+  _handleInsertRow = (startRow, amount) => {
+    let data = this.state.data;
+
+    const newRows = [];
+    for (let i = 0; i < amount; i++) {
+      let row = new Immutable.Map({data: new Immutable.Map({})});
+      const errors = this._validateRow(this.props.rowValidator, this.state.columns, row);
+      if (errors.length > 0){
+        row = row.set('errors', errors);
+      }
+      newRows.push(row);
+    }
+
+    data = data.splice(startRow, 0, ...newRows);
+
+    this.setState({ data }, () => {
+      this._setSelectionPoint(startRow, startRow + amount - 1, 0, this.state.columns.size);
+    });
+  }
+
+  /**
+   * Rendering
+   */
+  __indexHeaderRenderer = (label, cellKey, column, row, width) => {
+    return (
+      <RowIndex
+        selected={ column.__allSelected }
+        getStyle={ this.props.getRowHeaderStyle }
+        onMouseDown={ this._handleSelectAll }
+        onContextMenu={ this._handleRowContextMenu.bind(this, column, true) } />
+    );
+  }
+
+  __indexRenderer = (cellData, cellKey, row, rowIndex, column, width) => {
+    const selected = inBetween(rowIndex,
                         this.state.selection.startRow,
                         this.state.selection.endRow);
 
      return (
-      <Header
-        isRowHeader={true}
-        selected={selected}
-        label={(rowIndex + 1) + ''}
-        onMouseDown={this._handleIndexMouseDown.bind(this, rowIndex, 0, rowIndex, this.props.columns.length)}
-        onMouseEnter={this._handleIndexMouseOver.bind(this, rowIndex)} />
+      <RowIndex
+        index={ rowIndex }
+        selected={ selected }
+        errors={ row.get('errors') }
+        getStyle={ this.props.getRowHeaderStyle }
+        onMouseDown={ this._handleGlobalMouseDown.bind(this, 'row', {
+          startRow: rowIndex,
+          endRow: rowIndex,
+          startCol: 0,
+          endCol: this.state.columns.length - 1
+        }) }
+        onMouseEnter={ this._handleRowIndexMouseOver.bind(this, 'row', {
+          endRow: rowIndex
+        }, row.get('errors')) }
+        onMouseLeave={ this._handleCellMouseLeave }
+        onContextMenu={ this._handleRowContextMenu.bind(this, column, false) } />
     );
   }
 
-  _handleIndexMouseDown () {
-    this.__draggingRow = true;
-    this._setSelectionPoint.apply(this, Array.prototype.slice.call(arguments, 0));
-  }
-
-  _handleIndexMouseOver (rowIndex) {
-    if (this.__draggingRow){
-      const sel = this.state.selection;
-      this._setSelectionPoint(sel.startRow, sel.startCol, rowIndex, sel.endCol);
-    }
-  }
-
-  _handleIndexMouseUp () {
-    this.__draggingRow = false;
-  }
-
-  _headerRenderer (label, cellKey, columnData, rowData, width) {
-    const sel = this.state.selection;
-    const colIndex = this.state.columnReverseIndex[cellKey];
-    const selected = this._inBetween(colIndex, sel.startCol, sel.endCol);
-
-    if (cellKey === '__index'){
-      const allSelected = sel.startRow === 0 && sel.endRow === this.props.rowCount &&
-                          sel.startCol === 0 && sel.endCol === this.props.columns.length - 1;
-      return (
-        <Header
-          label={label}
-          selected={allSelected}
-          onMouseDown={this._handleColumnMouseDown.bind(this, 0, 0, this.props.rowCount, this.props.columns.length - 1)} />
-      );
-    } else {
-      return (
-        <Header
-          label={label}
-          selected={selected}
-          highlighted={columnData.required}
-          onMouseDown={this._handleColumnMouseDown.bind(this, 0, colIndex, this.props.rowCount, colIndex)}
-          onMouseEnter={this._handleColumnMouseOver.bind(this, colIndex)} />
-      );
-    }
-  }
-
-  _handleColumnMouseDown () {
-    this.__draggingCol = true;
-    this._setSelectionPoint.apply(this, Array.prototype.slice.call(arguments, 0));
-  }
-
-  _handleColumnMouseOver (colIndex) {
-    if (this.__draggingCol){
-      const sel = this.state.selection;
-      this._setSelectionPoint(sel.startRow, sel.startCol, sel.endRow, colIndex);
-    }
-  }
-
-  _handleWindowMouseUp () {
-    this.__draggingRow = false;
-    this.__draggingCol = false;
-    this.__dragging = false;
-  }
-
-  _cellRenderer (cellData, cellKey, rowData, rowIndex, columnData, width) {
-    const sel = this.state.selection;
-    const colIndex = this.state.columnReverseIndex[cellKey];
-
-
-    const focused = sel.startRow === rowIndex && sel.startCol === colIndex;
-    const selected = this._inBetween(rowIndex, sel.startRow, sel.endRow) &&
-                      this._inBetween(colIndex, sel.startCol, sel.endCol) &&
-                      (sel.startRow !== rowIndex || sel.startCol !== colIndex);
-
-    const edgeLeft = selected && (Math.min(sel.startCol, sel.endCol) === colIndex);
-    const edgeRight = selected && (Math.max(sel.startCol, sel.endCol) === colIndex);
-    const edgeTop = selected && (Math.min(sel.startRow, sel.endRow) === rowIndex);
-    const edgeBottom = selected && (Math.max(sel.startRow, sel.endRow) === rowIndex);
-
-    const errors = validator(rowData, cellData, columnData.required, columnData.options, columnData.validator);
-
+  _headerRenderer = (label, cellKey, column, row, width) => {
     return (
-      <CellWrapper
-        onMouseDown={this._handleCellClick.bind(this, rowIndex, colIndex)}
-        onMouseMove={this._handleCellDragOver.bind(this, rowIndex, colIndex)}>
-        <Cell
-          {...columnData}
-          focused={focused}
-          selected={selected}
-          data={((!this.state.editing || !focused) && columnData.formatter) ? columnData.formatter(cellData) : cellData}
-          editing={focused ? this.state.editing : false}
-          onEdit={this._handleEdit.bind(this)}
-          onUpdate={this._handleDataUpdate.bind(this, rowIndex, cellKey)}
-          valid={errors.length === 0}
-          edgeLeft={edgeLeft}
-          edgeRight={edgeRight}
-          edgeTop={edgeTop}
-          edgeBottom={edgeBottom} />
-      </CellWrapper>
+      <ColumnHeader
+        column={ column.get('column') }
+        selected={ column.get('__selected') }
+        getStyle={ this.props.getColumnHeaderStyle }
+        onMouseDown={this._handleGlobalMouseDown.bind(this, 'column', {
+          startRow: 0,
+          endRow: this.state.data.size - 1,
+          startCol: column.get('__index'),
+          endCol: column.get('__index')
+        }) }
+        onMouseEnter={ this._handleGlobalMouseOver.bind(this, 'column', {
+          endCol: column.get('__index')
+        }) }
+        onContextMenu={ this._handleColumnContextMenu.bind(this, column) } />
     );
   }
 
-  _setSelectionPoint (startRow, startCol, endRow, endCol) {
-    const selection = {
-      startRow: Math.max(Math.min(startRow, this.props.rowCount - 1), 0),
-      endRow: Math.max(Math.min(endRow, this.props.rowCount - 1), 0),
-      startCol: Math.max(Math.min(startCol, this.props.columns.length - 1), 0),
-      endCol: Math.max(Math.min(endCol, this.props.columns.length - 1), 0)
-    };
+  _cellRenderer = (cellData, cellKey, row, rowIndex, column, width) => {
+    const columnData = column.get('column');
+    const columnIndex = column.get('__index');
+    const sel = row.get('selection') || {};
+    const copySel = row.get('copySelection') || {};
 
-    this.setState({selection});
-  }
+    //  Selection
+    const focused = sel.startRow === rowIndex && sel.startCol === columnIndex;
+    const selected = inBetweenArea(rowIndex, columnIndex, sel.startRow, sel.endRow, sel.startCol, sel.endCol);
 
-  _handleCellKeyDown (e) {
-    if (this.state.lockKeyDown){
-      return;
-    }
+    const prevRowFocused = (sel.startRow === rowIndex - 1) && (sel.startCol === columnIndex);
+    const prevRowSelected = inBetweenArea(rowIndex - 1, columnIndex, sel.startRow, sel.endRow, sel.startCol, sel.endCol);
+    const hasPrevRow = prevRowSelected && (Math.max(sel.startRow, sel.endRow) === rowIndex - 1) || prevRowFocused;
 
-    const sel = this.state.selection;
-    const ctrl = (e.ctrlKey || e.metaKey);
+    const prevColumnFocused = (sel.startRow === rowIndex) && (sel.startCol === columnIndex - 1);
+    const prevColumnSelected = inBetweenArea(rowIndex, columnIndex - 1, sel.startRow, sel.endRow, sel.startCol, sel.endCol);
+    const hasPrevColumn = prevColumnSelected && (Math.max(sel.startCol, sel.endCol) === columnIndex - 1) || prevColumnFocused;
 
-    if (e.keyCode === 38){
-      e.preventDefault();
-      if (e.shiftKey){
-        const newEnd = ctrl ? 0 : sel.endRow - 1;
-        this._setSelectionPoint(sel.startRow, sel.startCol, newEnd, sel.endCol);
-      } else {
-        this._setSelectionPoint(sel.startRow - 1, sel.startCol, sel.startRow - 1, sel.startCol);
-      }
-    }
-    else if (e.keyCode === 40){
-      e.preventDefault();
-      if (e.shiftKey){
-        const newEnd = ctrl ? this.props.rowCount : sel.endRow + 1;
-        this._setSelectionPoint(sel.startRow, sel.startCol, newEnd, sel.endCol);
-      } else {
-        this._setSelectionPoint(sel.startRow + 1, sel.startCol, sel.startRow + 1, sel.startCol);
-      }
-    }
-    else if (e.keyCode === 37){
-      e.preventDefault();
-      if (e.shiftKey){
-        const newEnd = ctrl ? 0 : sel.endCol - 1;
-        this._setSelectionPoint(sel.startRow, sel.startCol, sel.endRow, newEnd);
-      } else {
-        this._setSelectionPoint(sel.startRow, sel.startCol - 1, sel.startRow, sel.startCol - 1);
-      }
-    }
-    else if (e.keyCode === 39){
-      e.preventDefault();
-      if (e.shiftKey){
-        const newEnd = ctrl ? this.props.columns.length : sel.endCol + 1;
-        this._setSelectionPoint(sel.startRow, sel.startCol, sel.endRow, newEnd);
-      } else {
-        this._setSelectionPoint(sel.startRow, sel.startCol + 1, sel.startRow, sel.startCol + 1);
-      }
-    } else if (e.keyCode === 8 || e.keyCode === 46){
-      this._handleDelete(e);
-    } else if (e.keyCode === 90 && ctrl){
-      if (e.shiftKey && this.__historyIndex < this.__history.length){
-        this.__historyIndex++;
-        const data = this.__history[this.__historyIndex - 1];
-        this.setState({data});
-      } else if (!e.shiftKey && this.__historyIndex > 0){
-        this.__historyIndex--;
-        const data = this.__history[this.__historyIndex - 1];
-        this.setState({data});
-      }
-    }
+    const isLeft = Math.min(sel.startCol, sel.endCol) === columnIndex;
+    const isRight = Math.max(sel.startCol, sel.endCol) === columnIndex;
+    const isTop = Math.min(sel.startRow, sel.endRow) === rowIndex;
+    const isBottom = Math.max(sel.startRow, sel.endRow) === rowIndex;
 
-    if (!ignoreKeyCodes[e.keyCode] && !this.state.editing && !this._isCommand(e)){
-      this.setState({editing: true});
-    }
-  }
+    //  Errors
+    const errors = row.get('errors') || {};
 
-  _isCommand (e) {
-    return (e.metaKey || e.ctrlKey) && (e.keyCode === 67 || e.keyCode === 86 || e.keyCode === 88) ||
-            (e.keyCode === 8 || e.keyCode === 46);
-  }
+    //  Editing
+    const editing = row.get('editing') === columnIndex && focused;
 
-  _handleEdit () {
-    this.setState({editing: true, lockKeyDown: true});
-  }
+    //  Copy selection
+    const copySelectedRow = inBetween(rowIndex, copySel.startRow, copySel.endRow);
+    const copySelectedCol = inBetween(columnIndex, copySel.startCol, copySel.endCol);
+    const isCopyLeft = Math.min(copySel.startCol, copySel.endCol) === columnIndex;
+    const isCopyRight = Math.max(copySel.startCol, copySel.endCol) === columnIndex;
+    const isCopyTop = Math.min(copySel.startRow, copySel.endRow) === rowIndex;
+    const isCopyBottom = Math.max(copySel.startRow, copySel.endRow) === rowIndex;
 
-  _handleDataUpdate (rowIndex, dataKey, value, jumpDown){
-    let data = this.state.data;
-    let rowData = data.get(rowIndex) || new Immutable.Map();
-    if (value){
-      data = data.set(rowIndex, rowData.set(dataKey, value));
-    } else {
-      data = data.set(rowIndex, rowData.delete(dataKey));
-    }
-    this.setState({data, editing: false, lockKeyDown: false});
+    //  Return cell
+    return (
+      <Cell
+        data={ (!editing && columnData.formatter) ? columnData.formatter(cellData) : cellData }
+        rowData={ row.get('data') }
+        editing={ editing }
+        focused={ focused }
+        selected={ selected }
+        hasPrevRow={ hasPrevRow }
+        hasPrevColumn={ hasPrevColumn }
+        isLeft={ isLeft }
+        isRight={ isRight }
+        isTop={ isTop }
+        isBottom={ isBottom }
+        error={ errors[cellKey] }
 
-    if (jumpDown){
-      const sel = this.state.selection;
-      this._setSelectionPoint(sel.startRow + 1, sel.startCol, sel.startRow + 1, sel.endCol);
-    }
-  }
+        isCopyLeft={ isCopyLeft && copySelectedRow }
+        isCopyRight={ isCopyRight && copySelectedRow }
+        isCopyTop={ isCopyTop && copySelectedCol }
+        isCopyBottom={ isCopyBottom && copySelectedCol }
 
-  _handleCellClick (row, col) {
-    this._setSelectionPoint(row, col, row, col);
-    this.__dragging = true;
-    if (this.state.editing && !this.state.lockKeyDown){
-      this.setState({lockKeyDown: true});
-    }
-  }
+        column={ columnData }
+        selection={ sel }
+        rowIndex={ rowIndex }
+        columnIndex={ columnIndex }
 
-  _handleCellMouseUp () {
-    this.__dragging = false;
-  }
+        getStyle={ this.props.getCellStyle }
+        onUpdate={ this._handleDataUpdate.bind(this, rowIndex, cellKey) }
 
-
-  _handleCellDragOver (endRow, endCol) {
-    const sel = this.state.selection;
-    if (this.__dragging &&
-      (endRow !== sel.endRow || endCol !== sel.endCol)){
-      this._setSelectionPoint(sel.startRow, sel.startCol, endRow, endCol);
-    }
+        onMouseDown={this._handleGlobalMouseDown.bind(this, 'cell', {
+          startRow: rowIndex,
+          endRow: rowIndex,
+          startCol: column.get('__index'),
+          endCol: column.get('__index')
+        }) }
+        onMouseOver={this._handleGlobalMouseOver.bind(this, 'cell', {
+          endRow: rowIndex,
+          endCol: column.get('__index')
+        }) }
+        onMouseEnter={ errors[cellKey] ? this._handleCellMouseEnter.bind(this, errors[cellKey]) : null }
+        onMouseLeave={ this._handleCellMouseLeave }
+        onDoubleClick={this._handleDoubleClick}
+        onContextMenu={ this._handleSelectionContextMenu } />
+    );
   }
 
   _getColumns () {
     const columns = [];
 
-    //  Selected
+    //  Index
     columns.push(
       <Column
-        key='__index'
-        dataKey='__index'
-        width={10 + 10 * (this.state.data.size + '').length}
-        headerRenderer={this._headerRenderer.bind(this)}
-        cellRenderer={this._indexRenderer.bind(this)}
+        key='___index'
+        dataKey='___index'
+        columnData={this.state.rowIndexData}
+        width={10 + 14 * ( this.state.data.size + '').length }
+        headerRenderer={ this.__indexHeaderRenderer }
+        cellRenderer={ this.__indexRenderer }
         fixed={true} />
     );
 
     //  Columns
-    this.props.columns.forEach((column, i) => {
-      column.columnData = column;
-      column.cellRenderer = this._cellRenderer.bind(this);
-      column.headerRenderer = this._headerRenderer.bind(this);
-      column.width = this.state.columnWidthOverrides[column.dataKey] || column.width || 150;
-      column.allowCellsRecycling = false;
-      column.isResizable = true;
+    this.state.columns.forEach((column, i) => {
+      const columnData = column.get('column');
+      columnData.columnData = column;
+      columnData.cellRenderer = this._cellRenderer;
+      columnData.headerRenderer = this._headerRenderer;
+      columnData.width = this.state.columnWidthOverrides[columnData.dataKey] || columnData.width || 150;
+      columnData.allowCellsRecycling = false;
+      columnData.isResizable = true;
 
-      if (i === this.props.columns.length - 1){
-        column.flexGrow = 1;
+      //  Last column fills up all the remaining width
+      if (i === this.state.columns.length - 1){
+        columnData.flexGrow = 1;
       }
 
       columns.push(
         <Column
-          { ...column }
-          cellDataGetter={this._cellDataGetter}
-          key={column.dataKey} />
+          { ...columnData }
+          cellDataGetter={ this._cellDataGetter }
+          key={ columnData.dataKey } />
       );
     });
 
     return columns;
   }
 
-  _rowGetter (i) {
-    return this.state.data.get(i);
-  }
+  _getErrorPopover () {
+    const showError = this.state.showError;
+    if (!showError) {
+      return;
+    }
 
-  _cellDataGetter (cellKey, rowData) {
-    return rowData.get(cellKey);
-  }
-
-  render(){
     return (
-      <div style={[
-          Styles.Unselectable,
-          Styles.FullSize
-        ]}>
+      <AutoPosition
+        anchorBox={ showError.boundingBox } >
+        <ErrorBox errors={ showError.errors } getStyle={ this.props.getCellErrorStyle }/>
+      </AutoPosition>
+    );
+  }
+
+  _getColumnMenu () {
+    if (!this.state.columnMenu) {
+      return;
+    }
+
+    const columnMenu = this.state.columnMenu;
+
+    return (
+      <AutoPosition
+        anchorBox={ {left: columnMenu.position.left, top: columnMenu.position.top} } >
+        <Menu items={[
+            {label: 'Sort Asc', onClick: this._handleSort.bind(this, 1) },
+            {label: 'Sort Desc', onClick: this._handleSort.bind(this, -1) },
+            {label: 'Clear', onClick: this._handleDelete }
+          ]} />
+      </AutoPosition>
+    );
+  }
+
+  _getRowMenu () {
+    if (!this.state.rowMenu) {
+      return;
+    }
+
+    const rowMenu = this.state.rowMenu;
+    const isHeader = rowMenu.isHeader;
+
+    const selection = this.state.selection;
+    const startRow = Math.min(selection.startRow, selection.endRow);
+    const endRow = Math.max(selection.startRow, selection.endRow);
+    const rowCount = endRow - startRow + 1;
+
+    return (
+      <AutoPosition
+        anchorBox={ {left: rowMenu.position.left, top: rowMenu.position.top} } >
+        <Menu items={[
+            isHeader ? null : {label: 'Insert ' + rowCount + ' above', onClick: this._handleInsertRow.bind(this, startRow, rowCount)},
+            isHeader ? null : {label: 'Insert ' + rowCount + ' below', onClick: this._handleInsertRow.bind(this, endRow + 1, rowCount)},
+            isHeader ? null : {label: 'Delete ' + rowCount + ' row', onClick: this._handleDeleteRow},
+            {label: 'Clear', onClick: this._handleDelete }
+          ]} />
+      </AutoPosition>
+    );
+  }
+
+  _getSelectionMenu () {
+    if (!this.state.selectionMenu) {
+      return;
+    }
+
+    const selectionMenu = this.state.selectionMenu;
+
+    return (
+      <AutoPosition
+        anchorBox={ {left: selectionMenu.position.left, top: selectionMenu.position.top} } >
+        <Menu items={[
+            {label: 'Clear', onClick: this._handleDelete }
+          ]} />
+      </AutoPosition>
+    );
+  }
+
+  render () {
+    return (
+      <div
+        ref='base'
+        style={ [
+          Styles.FullSize,
+          Styles.Sheet.base
+        ] }
+        tabIndex='0'>
         <Autosize>
           <Table
-            rowsCount={this.state.data.size}
-            rowGetter={this._rowGetter.bind(this)}
-            onColumnResizeEndCallback={this._handleResizeColumn.bind(this)}
-            isColumnResizing={false}
-            rowHeight={32}
-            headerHeight={36}
-            width={0}
-            height={0} >
+            rowsCount={ this.state.data.size }
+            rowGetter={ this._rowGetter }
+            onColumnResizeEndCallback={ this._handleResizeColumn }
+            isColumnResizing={ false }
+            rowHeight={ this.props.rowHeight }
+            headerHeight={ this.props.rowHeight }
+            width={ 0 }
+            height={ 0 } >
             { this._getColumns() }
           </Table>
         </Autosize>
+        <input
+          ref='dummy'
+          type='text'
+          style={{display: 'none'}}
+          onFocus={ this._preventDefault } />
+
+        { this._getErrorPopover() }
+        { this._getColumnMenu() }
+        { this._getRowMenu() }
+        { this._getSelectionMenu() }
+
       </div>
     );
   }
 }
 
 Sheet.propTypes = {
-  columns: React.PropTypes.array.isRequired,
   defaultData: React.PropTypes.array,
   rowCount: React.PropTypes.number,
-  window: React.PropTypes.string
+  columns: React.PropTypes.array.isRequired,
+  rowValidator: React.PropTypes.func,
+  getCellStyle: React.PropTypes.func,
+  getRowHeaderStyle: React.PropTypes.func,
+  getColumnHeaderStyle: React.PropTypes.func,
+  getCellErrorStyle: React.PropTypes.func,
+  rowHeight: React.PropTypes.number
 };
 
 Sheet.defaultProps = {
   defaultData: [],
-  rowCount: 0
+  rowCount: 10,
+  rowHeight: 32
 };
 
 export default Sheet;

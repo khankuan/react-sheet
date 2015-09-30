@@ -1,111 +1,27 @@
 import React from 'react';
 import Radium from 'radium';
+import tinycolor from 'tinycolor2';
 import Styles from '../styles';
 
-const style = {
-  base: {
-    paddingLeft: '4px',
-    paddingRight: '4px',
-    paddingTop: '4px',
-    paddingBottom: '4px',
-    borderLeft: '1px dotted rgb(218, 218, 218)',
-    borderRight: '1px dotted rgb(218, 218, 218)',
-    borderTop: '1px dotted rgb(218, 218, 218)',
-    borderBottom: '1px dotted rgb(218, 218, 218)',
-    width: 'calc(100% - 11px)',
-    height: 'calc(100% - 10px)',
-    background: 'none',
-    cursor: 'default',
-    display: 'inline-block'
-  },
-  selected: {
-    background: '#ECF3FF'
-  },
-  focused: {
-    borderLeft: '2px solid rgb(59, 108, 227)',
-    borderRight: '2px solid rgb(59, 108, 227)',
-    borderTop: '2px solid rgb(59, 108, 227)',
-    borderBottom: '2px solid rgb(59, 108, 227)',
-    paddingLeft: '3px',
-    paddingRight: '3px',
-    paddingTop: '3px',
-    paddingBottom: '3px'
-  },
-
-  edgeLeft: {
-    borderLeft: '2px solid rgba(59, 108, 227, 0.3)',
-    paddingLeft: '3px'
-  },
-  edgeRight: {
-    borderRight: '2px solid rgba(59, 108, 227, 0.3)',
-    paddingRight: '3px'
-  },
-  edgeTop: {
-    borderTop: '2px solid rgba(59, 108, 227, 0.5)',
-    paddingTop: '3px'
-  },
-  edgeBottom: {
-    borderBottom: '2px solid rgba(59, 108, 227, 0.5)',
-    paddingBottom: '3px'
-  },
-
-  editing: {
-    paddingLeft: '2px',
-    paddingRight: '2px',
-    paddingTop: '2px',
-    paddingBottom: '2px',
-    borderLeft: '3px solid rgb(59, 108, 227)',
-    borderRight: '3px solid rgb(59, 108, 227)',
-    borderTop: '3px solid rgb(59, 108, 227)',
-    borderBottom: '3px solid rgb(59, 108, 227)'
-  },
-  invalid: {
-    background: '#FFCCCC'
-  },
-  invalidAndSelect: {
-    background: '#F0D6DC'
-  },
-
-  select: {
-    position: 'absolute',
-    right: 0,
-    top: 0,
-    appearance: 'none',
-    WebkitAppearance: 'none',
-    background: 'none',
-    border: 'none',
-    width: '24px',
-    height: '100%',
-    padding: '4px',
-    opacity: 0
-  },
-  arrow: {
-    fontSize: '0.6em',
-    opacity: 0.25,
-    position: 'absolute',
-    right: '6px',
-    top: '50%',
-    transform: 'translateY(-50%)',
-    pointerEvents: 'none'
-  }
-
-};
+import { isEqualObject } from './helper';
 
 @Radium
 class Cell extends React.Component {
 
+  /*
+    Lifecycle
+   */
   constructor (props) {
-    super();
+    super(props);
     this.state = {
       data: props.data
     };
 
-    this._handleChange = this._handleChange.bind(this);
   }
 
   componentWillReceiveProps (nextProps) {
     const startingEdit = (!this.props.editing && nextProps.editing);
-    if (startingEdit){
+    if (startingEdit) {
       this.setState({
         data: nextProps.data
       }, () => {
@@ -114,27 +30,10 @@ class Cell extends React.Component {
     }
   }
 
-  componentWillUnmount () {
-    if (this.__keyDownListener){
-      window.removeEventListener('keydown', this.__keyDownListener, true);
-    }
-  }
-
-  _handleKeyUp (e) {
-    if (e.key === 'Enter') {
-      this._commitEdit(true);
-    } else if (e.key === 'Escape'){
-      this._revert();
-    }
-  }
-
-  _handleChange (e) {
-    this.setState({
-      data: e.target.value
-    });
-  }
-
-  _focusInput (){
+  /**
+   * Internal Methods
+   */
+  _focusInput = () => {
     const node = React.findDOMNode(this.refs.input);
     if (node){
       node.focus();
@@ -142,22 +41,73 @@ class Cell extends React.Component {
     }
   }
 
-  _commitEdit (jumpDown) {
-    this.props.onUpdate(this.state.data, jumpDown);
+  _commitEdit = () => {
+    this.props.onUpdate(this.state.data);
   }
 
-  _revert () {
-    this.setState({data: this.props.data}, () => {
-      this.props.onUpdate(this.props.data, false);
-    });
+  _revert = () => {
+    this.setState({data: this.props.data});
   }
 
-  _handleOptions (e) {
+  _getEdges (sel, selected, focused) {
+    return {
+      left: selected && this.props.isLeft || focused,
+      right: selected && this.props.isRight || focused,
+      top: selected && this.props.isTop || focused,
+      bottom: selected && this.props.isBottom || focused
+    };
+  }
+
+  /**
+   * Handlers
+   */
+  _handleKeyDown = (e) => {
+    //  Enter, Tab, Up, Down
+    if (e.keyCode === 13 || e.keyCode === 9 || e.keyCode === 38 || e.keyCode === 40) {
+      this._commitEdit();
+    } else if (e.keyCode === 27){
+      this._revert();
+    }
+  }
+
+  _handleChange = (e) => {
+    this.setState({ data: e.target.value });
+  }
+
+  _handleOptions = (e) => {
     this.props.onUpdate(e.target.value, false);
   }
 
+  _handleOptionsClick = (e) => {
+    React.findDOMNode(this.refs.select).click();
+  }
+
+  _handleSelect = (hover) => {
+    this.setState({ hoverOptions: hover });
+  }
+
+  _preventDefault = (e) => {
+    e.preventDefault();
+  }
+
+  _stopPropagation = (e) => {
+    e.stopPropagation();
+  }
+
+  _handleBlur = (e) => {
+    if (this.props.editing) {
+      this._commitEdit();
+    }
+  }
+
+
+
+
+  /*
+    Render
+   */
   _getOptions () {
-    const options = this.props.options.map((option, i) => {
+    const options = this.props.column.options.map((option, i) => {
       return (
         <option
           key={option}
@@ -167,104 +117,197 @@ class Cell extends React.Component {
       );
     });
 
-    options.unshift(<option key=' ' value=' ' disabled>- Choose -</option>);
+    options.unshift(<option key=' ' value=' ' disabled>Choose below</option>);
     return options;
   }
 
   _getSelect () {
-    if (this.props.options){
+    if (this.props.column.options){
       return (
-        <div style={[Styles.Unselectable]}>
+        <div style={ [Styles.Unselectable] }>
+          <div
+            style={ [Styles.Cell.arrow, this.state.hoverOptions ? {opacity: 0.5} : null] }>▼</div>
           <select
             ref='select'
-            style={[style.select, Styles.Unselectable]}
+            style={ [Styles.Cell.select] }
             value={' '}
-            onChange={this._handleOptions.bind(this)} >
+            onChange={ this._handleOptions }
+            onMouseEnter={ this._handleSelect.bind(this, true) }
+            onMouseLeave={ this._handleSelect.bind(this, false) } >
             { this._getOptions() }
           </select>
-          <div style={[Styles.Unselectable, style.arrow]}>▼</div>
         </div>
       );
     }
   }
 
+  getStyle () {
+    const sel = this.props.selection;
+    const editing = this.props.editing;
+    const focused = this.props.focused;
+    const selected = this.props.selected;
+    const hasPrevRow = this.props.hasPrevRow;
+    const hasPrevColumn = this.props.hasPrevColumn;
+    const error = this.props.error;
+
+    const styles = [Styles.Cell.input];
+
+    if (!editing) {
+      styles.push(Styles.Unselectable);
+      styles.push({pointerEvents: 'none'});
+    }
+
+    //  Background color
+    const highlightFactor = Styles.Colors.highlightFactor;
+    let background;
+    if (selected && error) {
+      background = tinycolor.mix(tinycolor(Styles.Colors.danger), tinycolor(Styles.Colors.primary), 30);
+    } else if (error) {
+      background = tinycolor(Styles.Colors.danger);
+    } else if (selected) {
+      background = tinycolor(Styles.Colors.primary);
+    }
+
+    if (editing && background){
+      background = tinycolor(Styles.Colors.white);
+    }
+
+    if (background){
+      styles.push({
+        background: background.setAlpha(highlightFactor).toRgbString()
+      });
+    }
+
+    //  Copy Edges
+    const copyColor = Styles.Colors.primary;
+    if (this.props.isCopyLeft){
+      styles.push({paddingLeft: (6 + 1 - 1) + 'px', borderLeftWidth: '1px', borderLeftColor: copyColor, borderLeftStyle: 'dashed'});
+    }
+    if (this.props.isCopyRight){
+      styles.push({paddingRight: (6 - 1) + 'px', borderRightWidth: '1px', borderRightColor: copyColor, borderRightStyle: 'dashed'});
+    }
+    if (this.props.isCopyTop){
+      styles.push({paddingTop: (4 + 1 - 1) + 'px', borderTopWidth: '1px', borderTopColor: copyColor, borderTopStyle: 'dashed'});
+    }
+    if (this.props.isCopyBottom){
+      styles.push({paddingBottom: (4 - 1) + 'px', borderBottomWidth: '1px', borderBottomColor: copyColor, borderBottomStyle: 'dashed'});
+    }
+
+    //  Selection Edges
+    const edges = this._getEdges(sel, selected, focused);
+    const px = focused ? 2 : 1;
+    const color = Styles.Colors.primary;
+
+    if (edges.left){
+      styles.push({paddingLeft: (6 + 1 - px) + 'px', borderLeftWidth: px + 'px', borderLeftColor: color});
+    }
+    if (edges.right){
+      styles.push({paddingRight: (6 - px) + 'px', borderRightWidth: px + 'px', borderRightColor: color});
+    }
+    if (edges.top){
+      styles.push({paddingTop: (4 + 1 - px) + 'px', borderTopWidth: px + 'px', borderTopColor: color});
+    }
+    if (edges.bottom){
+      styles.push({paddingBottom: (4 - px) + 'px', borderBottomWidth: px + 'px', borderBottomColor: color});
+    }
+
+    //  Previous edges
+    if (hasPrevRow){
+      styles.push({paddingTop: (4 + 1) + 'px', borderTopWidth: 0 + 'px'});
+    }
+    if (hasPrevColumn){
+      styles.push({paddingLeft: (6 + 1) + 'px', borderLeftWidth: 0 + 'px'});
+    }
+
+    //  Final style before customisation
+    return this.props.getStyle ?
+      this.props.getStyle(this.props.data,
+                          this.props.rowData,
+                          this.props.column,
+                          { selected, focused, editing, error, selection: sel },
+                          styles)
+      : styles;
+  }
+
+
+  /**
+   * Rendering
+   */
+  shouldComponentUpdate (nextProps, nextState) {
+    //return true;
+    const ignoreKeys = {selection: true};
+    if (!isEqualObject(this.props, nextProps, ignoreKeys) ||
+        !isEqualObject(this.state, nextState)){
+      return true;
+    }
+    return false;
+  }
+
   render () {
-    const styles = [style.base];
-
-    if (this.props.edgeLeft){ styles.push(style.edgeLeft); }
-    if (this.props.edgeRight){ styles.push(style.edgeRight); }
-    if (this.props.edgeTop){ styles.push(style.edgeTop); }
-    if (this.props.edgeBottom){ styles.push(style.edgeBottom); }
-
-    if (this.props.selected){
-      styles.push(style.selected);
-    }
-
-    if (this.props.focused){
-      styles.push(style.focused);
-    }
-
-    if (this.props.editing && this.props.focused){
-      styles.push(style.editing);
-    }
-
-    if (!this.props.valid){
-      if (this.props.selected){
-        styles.push(style.invalidAndSelect);
-      } else {
-        styles.push(style.invalid);
-      }
-    }
-
     return (
-      <div style={[Styles.FullSize, Styles.Unselectable]}>
+      <div
+        style={ [Styles.Stretch, Styles.Unselectable] }
+        onDrag={ this._preventDefault }
+        onMouseDown={ this.props.onMouseDown }
+        onMouseOver={ this.props.onMouseOver }
+        onMouseEnter = { this.props.onMouseEnter }
+        onMouseLeave = { this.props.onMouseLeave }
+        onDoubleClick={ this.props.onDoubleClick }
+        onContextMenu={ this.props.onContextMenu } >
         <input
           ref='input'
           type='text'
-          style={styles}
-          value={this.props.editing ? this.state.data : this.props.data}
-          onKeyUp={this._handleKeyUp.bind(this)}
-          onChange={this._handleChange}
-          onBlur={this._commitEdit.bind(this, false)}
-          onDoubleClick={this.props.onEdit}
-          disabled={!this.props.editing} />
+          style={ this.getStyle() }
+          value={ this.props.editing ? this.state.data : this.props.data }
+          onKeyDown={ this._handleKeyDown }
+          onChange={ this._handleChange }
+          onBlur={ this._handleBlur } />
         { this._getSelect() }
       </div>
     );
   }
-
-  shouldComponentUpdate (nextProps, nextState) {
-    if (this.props.focused !== nextProps.focused) { return true; }
-    if (this.props.selected !== nextProps.selected) { return true; }
-    if (this.props.editing !== nextProps.editing) { return true; }
-    if (this.props.data !== nextProps.data) { return true; }
-    if (this.props.valid !== nextProps.valid) { return true; }
-    if (this.props.options !== nextProps.options) { return true; }
-    if (this.state.data !== nextState.data) { return true; }
-
-    if (this.props.edgeLeft !== nextProps.edgeLeft) { return true; }
-    if (this.props.edgeRight !== nextProps.edgeRight) { return true; }
-    if (this.props.edgeTop !== nextProps.edgeTop) { return true; }
-    if (this.props.edgeBottom !== nextProps.edgeBottom) { return true; }
-
-    return false;
-  }
-
 }
 
 Cell.propTypes = {
-  focused: React.PropTypes.bool,
-  selected: React.PropTypes.bool,
-  editing: React.PropTypes.bool,
   data: React.PropTypes.any,
-  onEdit: React.PropTypes.func.isRequired,
+  rowData: React.PropTypes.object,
+  selected: React.PropTypes.bool,
+  focused: React.PropTypes.bool,
+  hasPrevRow: React.PropTypes.bool,
+  hasPrevColumn: React.PropTypes.bool,
+  isLeft: React.PropTypes.bool,
+  isRight: React.PropTypes.bool,
+  isTop: React.PropTypes.bool,
+  isBottom: React.PropTypes.bool,
+  editing: React.PropTypes.bool,
+  error: React.PropTypes.string,
+
+  isCopyLeft: React.PropTypes.bool,
+  isCopyRight: React.PropTypes.bool,
+  isCopyTop: React.PropTypes.bool,
+  isCopyBottom: React.PropTypes.bool,
+
+  column: React.PropTypes.shape({
+    options: React.PropTypes.array
+  }),
+  selection: React.PropTypes.shape({
+    startRow: React.PropTypes.number,
+    endRow: React.PropTypes.number,
+    startCol: React.PropTypes.number,
+    endCol: React.PropTypes.number
+  }),
+  rowIndex: React.PropTypes.number,
+  columnIndex: React.PropTypes.number,
+
+  getStyle: React.PropTypes.func,
   onUpdate: React.PropTypes.func.isRequired,
-  valid: React.PropTypes.bool,
-  options: React.PropTypes.array,
-  edgeLeft: React.PropTypes.bool,
-  edgeRight: React.PropTypes.bool,
-  edgeTop: React.PropTypes.bool,
-  edgeBottom: React.PropTypes.bool
+
+  onMouseDown: React.PropTypes.func,
+  onMouseOver: React.PropTypes.func,
+  onMouseEnter: React.PropTypes.func,
+  onMouseLeave: React.PropTypes.func,
+  onDoubleClick: React.PropTypes.func,
+  onContextMenu: React.PropTypes.func
 };
 
 export default Cell;

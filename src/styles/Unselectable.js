@@ -1,4 +1,5 @@
 export default {
   outline: 'none',
-  userSelect: 'none'
+  userSelect: 'none',
+  cursor: 'default'
 };

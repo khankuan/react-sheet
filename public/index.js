@@ -1,4 +1,5 @@
 var columns = [
+  { label: 'ID Number', dataKey: 'id_no', required: true, fixed: true },
   { label: 'Employee Name', dataKey: 'name', required: true, fixed: true, width: 150 },
   { label: 'Job Title', dataKey: 'jobTitle', options: ['Boss', 'Minion'] },
   { label: 'Email Address',
@@ -8,18 +9,17 @@ var columns = [
       return re.test(value);
     } 
   },
-  { label: 'Salary', dataKey: 'salary', formatter: function(value){ return value ? '$' + value : value; }}
+  { label: 'Salary', dataKey: 'salary', formatter: function(value){ return value ? '$' + value : value; }, validator: function(value){ return (parseInt(value) >= 0) ? 'Must be postiive' : null }}
 ];
 
 
 function init () {
   var element = ReactSheetFactory({
-    defaultData: [{name: 'John', jobTitle: 'bos'}, {email: 'sam', salary: 500}],
+    defaultData: [{name: 'John', jobTitle: 'bos'}, {name: 'Zebra', email: 'sam', salary: 500}, {name: 'Ali'}],
     rowCount: 20,
-    columns: columns,
-    window: 'myTable'
+    columns: columns
   });
-  React.render(element, document.getElementById('app'));
+  window.myTable = React.render(element, document.getElementById('app'));
 }
 
 
