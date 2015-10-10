@@ -61,7 +61,7 @@ function submit () {
 - Sort by column
 
 ## TODO
-- Right click menu (copy, paste, cut)
+- Right click menu (paste)
 - Fix safari drag causing i-beam cursor
 - Proper demo page
 
