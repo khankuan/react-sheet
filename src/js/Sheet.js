@@ -3,7 +3,7 @@ import FixedDataTable from 'fixed-data-table';
 import Immutable, { fromJS } from 'immutable';
 import Radium from 'radium';
 import _ from 'lodash';
-
+import clipboard from 'clipboard-js';
 import '../sass/index.scss';
 
 const Table = FixedDataTable.Table;
@@ -622,13 +622,13 @@ class Sheet extends React.Component {
     this.setState({ data });
   }
 
-  _handleCopy = (e, isCut) => {
+  _processCopy = () => {
     if (!isInParent(document.activeElement, React.findDOMNode(this.refs.base)) ||
         this.state.editing){
-      return;
+      return null;
     }
 
-    const data = [];
+    let data = [];
     const sel = this.state.selection;
     const startRow = Math.min(sel.startRow, sel.endRow);
     const endRow = Math.max(sel.startRow, sel.endRow);
@@ -645,15 +645,35 @@ class Sheet extends React.Component {
       data.push(rowDataRaw.join('\t'));
     }
 
-    e.clipboardData.setData('text/plain', data.join('\n'));
-    e.preventDefault();
-
     this._setCopySelectionObject(sel);
-    this.setState({ isCut });
+    return data;
+  }
+
+  _handleMenuCopy = (e) => {
+    let data = this._processCopy();
+    if (data) {
+      clipboard.copy(data);
+    }
+    this.setState({ isCut: false });
+  }
+
+  _handleMenuCut = (e) => {
+    this._handleMenuCopy(e);
+    this.setState({ isCut: true });
+  }
+
+  _handleCopy = (e) => {
+    let data = this._processCopy();
+    if (data) {
+      e.clipboardData.setData('text/plain', data.join('\n'));
+      e.preventDefault();
+    }
+    this.setState({ isCut: false });
   }
 
   _handleCut = (e) => {
-    this._handleCopy(e, true);
+    this._handleCopy(e);
+    this.setState({ isCut: true });
   }
 
   _handlePaste = (e) => {
@@ -1057,7 +1077,7 @@ class Sheet extends React.Component {
   _getErrorPopover () {
     const showError = this.state.showError;
     if (!showError) {
-      return;
+      return null;
     }
 
     return (
@@ -1070,7 +1090,7 @@ class Sheet extends React.Component {
 
   _getColumnMenu () {
     if (!this.state.columnMenu) {
-      return;
+      return null;
     }
 
     const columnMenu = this.state.columnMenu;
@@ -1081,6 +1101,8 @@ class Sheet extends React.Component {
         <Menu items={[
             {label: 'Sort Asc', onClick: this._handleSort.bind(this, 1) },
             {label: 'Sort Desc', onClick: this._handleSort.bind(this, -1) },
+            {label: 'Copy', onClick: this._handleMenuCopy },
+            {label: 'Cut', onClick: this._handleMenuCut },
             {label: 'Clear', onClick: this._handleDelete }
           ]} />
       </AutoPosition>
@@ -1089,7 +1111,7 @@ class Sheet extends React.Component {
 
   _getRowMenu () {
     if (!this.state.rowMenu) {
-      return;
+      return null;
     }
 
     const rowMenu = this.state.rowMenu;
@@ -1107,6 +1129,8 @@ class Sheet extends React.Component {
             isHeader ? null : {label: 'Insert ' + rowCount + ' above', onClick: this._handleInsertRow.bind(this, startRow, rowCount)},
             isHeader ? null : {label: 'Insert ' + rowCount + ' below', onClick: this._handleInsertRow.bind(this, endRow + 1, rowCount)},
             isHeader ? null : {label: 'Delete ' + rowCount + ' row', onClick: this._handleDeleteRow},
+            {label: 'Copy', onClick: this._handleMenuCopy },
+            {label: 'Cut', onClick: this._handleMenuCut },
             {label: 'Clear', onClick: this._handleDelete }
           ]} />
       </AutoPosition>
@@ -1115,7 +1139,7 @@ class Sheet extends React.Component {
 
   _getSelectionMenu () {
     if (!this.state.selectionMenu) {
-      return;
+      return null;
     }
 
     const selectionMenu = this.state.selectionMenu;
@@ -1124,6 +1148,8 @@ class Sheet extends React.Component {
       <AutoPosition
         anchorBox={ {left: selectionMenu.position.left, top: selectionMenu.position.top} } >
         <Menu items={[
+            {label: 'Copy', onClick: this._handleMenuCopy },
+            {label: 'Cut', onClick: this._handleMenuCut },
             {label: 'Clear', onClick: this._handleDelete }
           ]} />
       </AutoPosition>
